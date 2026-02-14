@@ -1,0 +1,23 @@
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Config (contains secrets)
+config.php
+includes/config.php
+
+# Temp
+nul
+*.tmp
+*.log
+*.bak
+
+# Claude Code
+.claude/
