@@ -1,6 +1,7 @@
 /**
  * Pyra Workspace — Client Portal App
  * Frontend controller for the client portal
+ * Phase 4: Dashboard + Projects + Navigation + Browser History
  */
 const PortalApp = {
 
@@ -12,6 +13,7 @@ const PortalApp = {
     csrfToken: '',
     userMenuOpen: false,
     mobileNavOpen: false,
+    _historyLock: false,
 
     // ============ Init ============
     init() {
@@ -19,7 +21,7 @@ const PortalApp = {
         this.client = config.client;
         this.csrfToken = config.csrf_token || '';
 
-        this.showScreen('dashboard');
+        this.initHistory();
         this.initNotifications();
         this.initClickOutside();
     },
@@ -62,7 +64,6 @@ const PortalApp = {
             return;
         }
 
-        // Loading state
         btn.classList.add('portal-btn-loading');
         btn.disabled = true;
         errorEl.textContent = '';
@@ -162,24 +163,80 @@ const PortalApp = {
         location.reload();
     },
 
+    // ============ Browser History ============
+    initHistory() {
+        // Parse initial URL hash or default to dashboard
+        const route = this._parseRoute();
+        this.showScreen(route.screen, route.params, { pushState: false });
+
+        // Handle browser back/forward
+        window.addEventListener('popstate', (e) => {
+            this._historyLock = true;
+            const state = e.state || { screen: 'dashboard', params: {} };
+            this.showScreen(state.screen, state.params, { pushState: false });
+            this._historyLock = false;
+        });
+    },
+
+    _parseRoute() {
+        const hash = location.hash.replace('#', '');
+        if (!hash) return { screen: 'dashboard', params: {} };
+
+        const parts = hash.split('/');
+        const screen = parts[0] || 'dashboard';
+        const params = {};
+
+        if (screen === 'projects' && parts[1]) params.page = parseInt(parts[1]) || 1;
+        if (screen === 'project_detail' && parts[1]) params.projectId = parts[1];
+        if (screen === 'file_preview' && parts[1]) params.fileId = parts[1];
+
+        return { screen, params };
+    },
+
+    _buildHash(screen, params = {}) {
+        switch (screen) {
+            case 'dashboard': return '#dashboard';
+            case 'projects': return params.page > 1 ? `#projects/${params.page}` : '#projects';
+            case 'project_detail': return `#project_detail/${params.projectId || ''}`;
+            case 'file_preview': return `#file_preview/${params.fileId || ''}`;
+            case 'notifications': return '#notifications';
+            case 'profile': return '#profile';
+            default: return '#dashboard';
+        }
+    },
+
     // ============ Screen Router ============
-    showScreen(screen, params = {}) {
+    showScreen(screen, params = {}, options = {}) {
+        const { pushState = true } = options;
         this.currentScreen = screen;
 
         // Update active nav
+        const navScreen = ['project_detail', 'file_preview'].includes(screen) ? 'projects' : screen;
         document.querySelectorAll('.portal-nav-btn').forEach(btn => {
-            btn.classList.toggle('portal-nav-active', btn.dataset.screen === screen);
+            btn.classList.toggle('portal-nav-active', btn.dataset.screen === navScreen);
         });
 
         // Close mobile nav on screen change
         if (this.mobileNavOpen) this.toggleMobileNav();
+
+        // Push browser history (unless coming from popstate or initial load)
+        if (pushState && !this._historyLock) {
+            const hash = this._buildHash(screen, params);
+            const state = { screen, params };
+            history.pushState(state, '', hash);
+        }
+
+        // Scroll to top
+        const main = document.getElementById('portalMain');
+        if (main) main.scrollTop = 0;
+        window.scrollTo({ top: 0, behavior: 'instant' });
 
         switch (screen) {
             case 'dashboard':
                 this.renderDashboard();
                 break;
             case 'projects':
-                this.renderProjects(params.page || 1);
+                this.renderProjects(params.page || 1, params.status);
                 break;
             case 'project_detail':
                 this.renderProjectDetail(params.projectId);
@@ -198,10 +255,57 @@ const PortalApp = {
         }
     },
 
+    // ============ Skeleton Loaders ============
+    _dashboardSkeleton() {
+        return `
+            <div class="portal-dashboard">
+                <div class="portal-welcome-card portal-skeleton-card">
+                    <div class="portal-skeleton" style="height:28px;width:200px;margin-bottom:12px"></div>
+                    <div class="portal-skeleton" style="height:18px;width:160px"></div>
+                </div>
+                <div class="portal-dashboard-grid">
+                    ${[1,2,3,4,5,6].map(() => `
+                        <div class="portal-card portal-skeleton-card">
+                            <div class="portal-card-header">
+                                <div class="portal-skeleton" style="width:40px;height:40px;border-radius:10px"></div>
+                                <div class="portal-skeleton" style="width:48px;height:36px;border-radius:8px"></div>
+                            </div>
+                            <div class="portal-skeleton" style="height:18px;width:120px;margin:12px 0 16px"></div>
+                            <div class="portal-skeleton" style="height:14px;width:100%;margin-bottom:8px"></div>
+                            <div class="portal-skeleton" style="height:14px;width:85%;margin-bottom:8px"></div>
+                            <div class="portal-skeleton" style="height:14px;width:70%"></div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    },
+
+    _projectsSkeleton() {
+        return `
+            <div class="portal-projects">
+                <div class="portal-skeleton" style="height:30px;width:120px;margin-bottom:24px"></div>
+                <div class="portal-projects-grid">
+                    ${[1,2,3].map(() => `
+                        <div class="portal-project-card portal-skeleton-card">
+                            <div class="portal-skeleton" style="height:160px;border-radius:0"></div>
+                            <div style="padding:16px">
+                                <div class="portal-skeleton" style="height:20px;width:70%;margin-bottom:10px"></div>
+                                <div class="portal-skeleton" style="height:14px;width:100%;margin-bottom:6px"></div>
+                                <div class="portal-skeleton" style="height:14px;width:60%;margin-bottom:16px"></div>
+                                <div class="portal-skeleton" style="height:12px;width:40%"></div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    },
+
     // ============ Dashboard ============
     async renderDashboard() {
         const main = document.getElementById('portalMain');
-        main.innerHTML = '<div class="portal-loading"><div class="portal-spinner"></div></div>';
+        main.innerHTML = this._dashboardSkeleton();
 
         try {
             const res = await this.apiFetch('?action=client_dashboard');
@@ -209,123 +313,300 @@ const PortalApp = {
             if (!data.success) throw new Error(data.error);
 
             const d = data.dashboard;
+            const lastLogin = d.client.last_login ? this.timeAgo(d.client.last_login) : '';
             main.innerHTML = `
                 <div class="portal-dashboard">
                     <div class="portal-welcome-card">
-                        <h2>مرحبا، ${this.escHtml(d.client.name)}</h2>
-                        <p>${this.escHtml(d.client.company)}</p>
+                        <div class="portal-welcome-content">
+                            <div class="portal-welcome-text">
+                                <h2>مرحباً، ${this.escHtml(d.client.name)} 👋</h2>
+                                <p>${this.escHtml(d.client.company)}${lastLogin ? ` · آخر دخول: ${this.escHtml(lastLogin)}` : ''}</p>
+                            </div>
+                            <div class="portal-welcome-stats">
+                                <div class="portal-welcome-stat">
+                                    <span class="portal-welcome-stat-num">${d.projects.total_active}</span>
+                                    <span class="portal-welcome-stat-label">مشاريع</span>
+                                </div>
+                                <div class="portal-welcome-stat">
+                                    <span class="portal-welcome-stat-num">${d.pending_approvals.total}</span>
+                                    <span class="portal-welcome-stat-label">بانتظار</span>
+                                </div>
+                                <div class="portal-welcome-stat">
+                                    <span class="portal-welcome-stat-num">${d.unread_notifications}</span>
+                                    <span class="portal-welcome-stat-label">إشعارات</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div class="portal-dashboard-grid">
-                        <div class="portal-card" onclick="PortalApp.showScreen('projects')">
-                            <div class="portal-card-header">
-                                <span class="portal-card-icon"><i data-lucide="folder-open"></i></span>
-                                <span class="portal-card-count">${d.projects.total_active}</span>
-                            </div>
-                            <h3>المشاريع النشطة</h3>
-                            <div class="portal-card-list">
-                                ${(d.projects.list || []).slice(0, 3).map(p => `
-                                    <div class="portal-card-list-item" onclick="event.stopPropagation(); PortalApp.showScreen('project_detail', {projectId: '${this.escAttr(p.id)}'})">
-                                        <span>${this.escHtml(p.name)}</span>
-                                        <span class="portal-status-badge status-${this.escAttr(p.status)}">${this.statusLabel(p.status)}</span>
+                        ${this._renderDashCard({
+                            icon: 'folder-open', count: d.projects.total_active,
+                            title: 'المشاريع النشطة',
+                            items: (d.projects.list || []).slice(0, 3).map(p => ({
+                                label: p.name,
+                                extra: `<span class="portal-status-badge status-${this.escAttr(p.status)}">${this.statusLabel(p.status)}</span>`,
+                                onclick: `event.stopPropagation(); PortalApp.showScreen('project_detail', {projectId: '${this.escAttr(p.id)}'})`
+                            })),
+                            onclick: "PortalApp.showScreen('projects')",
+                            footer: 'عرض كل المشاريع'
+                        })}
+                        ${this._renderDashCard({
+                            icon: 'clock', count: d.pending_approvals.total,
+                            title: 'بانتظار موافقتك',
+                            accent: d.pending_approvals.total > 0 ? 'warning' : null,
+                            items: (d.pending_approvals.list || []).slice(0, 3).map(a => ({
+                                label: a.file_name || '',
+                                extra: `<time>${this.timeAgo(a.created_at)}</time>`
+                            })),
+                            emptyText: 'لا توجد ملفات بانتظار الموافقة 🎉'
+                        })}
+                        ${this._renderDashCard({
+                            icon: 'file-text', count: d.recent_files.total,
+                            title: 'آخر الملفات',
+                            items: (d.recent_files.list || []).slice(0, 3).map(f => ({
+                                label: f.file_name,
+                                extra: `<span class="portal-card-file-size">${this.formatSize(f.file_size)}</span>`,
+                                icon: this.getFileIcon(f.mime_type)
+                            })),
+                            emptyText: 'لا توجد ملفات بعد'
+                        })}
+                        ${this._renderDashCard({
+                            icon: 'message-circle', count: d.unread_comments || 0,
+                            title: 'رسائل جديدة',
+                            items: [],
+                            emptyText: d.unread_comments > 0
+                                ? `لديك ${d.unread_comments} رسائل جديدة من الفريق`
+                                : 'لا توجد رسائل جديدة',
+                            onclick: null
+                        })}
+                        ${this._renderDashCard({
+                            icon: 'bell', count: d.unread_notifications,
+                            title: 'الإشعارات',
+                            items: (d.recent_notifications || []).slice(0, 3).map(n => ({
+                                label: n.title,
+                                extra: `<time>${this.timeAgo(n.created_at)}</time>`,
+                                unread: !n.is_read
+                            })),
+                            onclick: "PortalApp.showScreen('notifications')",
+                            footer: 'عرض كل الإشعارات',
+                            emptyText: 'لا توجد إشعارات'
+                        })}
+                        ${this._renderDashCard({
+                            icon: 'activity', count: null,
+                            title: 'ملخص سريع',
+                            custom: `
+                                <div class="portal-quick-stats">
+                                    <div class="portal-quick-stat">
+                                        <i data-lucide="check-circle" style="width:16px;height:16px;color:var(--portal-success)"></i>
+                                        <span>${d.projects.list ? d.projects.list.filter(p => p.status === 'completed').length : 0} مكتمل</span>
                                     </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                        <div class="portal-card">
-                            <div class="portal-card-header">
-                                <span class="portal-card-icon"><i data-lucide="clock"></i></span>
-                                <span class="portal-card-count">${d.pending_approvals.total}</span>
-                            </div>
-                            <h3>بانتظار موافقتك</h3>
-                            <div class="portal-card-list">
-                                ${(d.pending_approvals.list || []).slice(0, 3).map(a => `
-                                    <div class="portal-card-list-item">
-                                        <span>${this.escHtml(a.file_name || '')}</span>
-                                        <time>${this.timeAgo(a.created_at)}</time>
+                                    <div class="portal-quick-stat">
+                                        <i data-lucide="loader" style="width:16px;height:16px;color:var(--portal-info)"></i>
+                                        <span>${d.projects.list ? d.projects.list.filter(p => p.status === 'in_progress').length : 0} قيد التنفيذ</span>
                                     </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                        <div class="portal-card">
-                            <div class="portal-card-header">
-                                <span class="portal-card-icon"><i data-lucide="file-text"></i></span>
-                                <span class="portal-card-count">${d.recent_files.total}</span>
-                            </div>
-                            <h3>آخر الملفات</h3>
-                            <div class="portal-card-list">
-                                ${(d.recent_files.list || []).slice(0, 3).map(f => `
-                                    <div class="portal-card-list-item">
-                                        <span>${this.escHtml(f.file_name)}</span>
-                                        <span>${this.formatSize(f.file_size)}</span>
+                                    <div class="portal-quick-stat">
+                                        <i data-lucide="eye" style="width:16px;height:16px;color:var(--portal-warning)"></i>
+                                        <span>${d.projects.list ? d.projects.list.filter(p => p.status === 'review').length : 0} مراجعة</span>
                                     </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                        <div class="portal-card" onclick="PortalApp.showScreen('notifications')">
-                            <div class="portal-card-header">
-                                <span class="portal-card-icon"><i data-lucide="bell"></i></span>
-                                <span class="portal-card-count">${d.unread_notifications}</span>
-                            </div>
-                            <h3>الإشعارات</h3>
-                            <div class="portal-card-list">
-                                ${(d.recent_notifications || []).slice(0, 3).map(n => `
-                                    <div class="portal-card-list-item ${n.is_read ? '' : 'portal-unread'}">
-                                        <span>${this.escHtml(n.title)}</span>
-                                        <time>${this.timeAgo(n.created_at)}</time>
+                                    <div class="portal-quick-stat">
+                                        <i data-lucide="file-check" style="width:16px;height:16px;color:var(--portal-success)"></i>
+                                        <span>${d.pending_approvals.total === 0 ? 'كل الملفات مراجعة ✓' : d.pending_approvals.total + ' ملف بانتظارك'}</span>
                                     </div>
-                                `).join('')}
-                            </div>
-                        </div>
+                                </div>
+                            `
+                        })}
                     </div>
                 </div>
             `;
             if (typeof lucide !== 'undefined') lucide.createIcons();
         } catch (err) {
-            main.innerHTML = `<div class="portal-error"><p>خطأ في تحميل البيانات</p><p style="font-size:0.85rem;color:var(--text-muted)">${this.escHtml(err.message)}</p></div>`;
+            main.innerHTML = `
+                <div class="portal-error-state">
+                    <div class="portal-error-icon"><i data-lucide="alert-triangle"></i></div>
+                    <h3>خطأ في تحميل البيانات</h3>
+                    <p>${this.escHtml(err.message)}</p>
+                    <button class="portal-btn-retry" onclick="PortalApp.renderDashboard()">
+                        <i data-lucide="refresh-cw"></i> إعادة المحاولة
+                    </button>
+                </div>
+            `;
+            if (typeof lucide !== 'undefined') lucide.createIcons();
         }
     },
 
+    _renderDashCard({ icon, count, title, items, onclick, footer, emptyText, accent, custom }) {
+        const clickAttr = onclick ? `onclick="${onclick}"` : '';
+        const accentClass = accent ? ` portal-card--${accent}` : '';
+        const cursorClass = onclick ? ' portal-card--clickable' : '';
+
+        const countHtml = count !== null && count !== undefined
+            ? `<span class="portal-card-count">${count}</span>` : '';
+
+        let bodyHtml = '';
+        if (custom) {
+            bodyHtml = custom;
+        } else if (items && items.length > 0) {
+            bodyHtml = `<div class="portal-card-list">
+                ${items.map(item => `
+                    <div class="portal-card-list-item${item.unread ? ' portal-unread' : ''}"${item.onclick ? ` onclick="${item.onclick}"` : ''}>
+                        <span class="portal-card-item-label">${item.icon ? `<span class="portal-card-item-icon">${item.icon}</span>` : ''}${this.escHtml(item.label)}</span>
+                        ${item.extra || ''}
+                    </div>
+                `).join('')}
+            </div>`;
+        } else if (emptyText) {
+            bodyHtml = `<div class="portal-card-empty">${this.escHtml(emptyText)}</div>`;
+        }
+
+        const footerHtml = footer && onclick
+            ? `<div class="portal-card-footer"><span>${this.escHtml(footer)}</span><i data-lucide="arrow-left" style="width:14px;height:14px"></i></div>` : '';
+
+        return `
+            <div class="portal-card${accentClass}${cursorClass}" ${clickAttr}>
+                <div class="portal-card-header">
+                    <span class="portal-card-icon"><i data-lucide="${icon}"></i></span>
+                    ${countHtml}
+                </div>
+                <h3>${this.escHtml(title)}</h3>
+                ${bodyHtml}
+                ${footerHtml}
+            </div>
+        `;
+    },
+
     // ============ Projects ============
-    async renderProjects(page) {
+    async renderProjects(page, statusFilter) {
         const main = document.getElementById('portalMain');
-        main.innerHTML = '<div class="portal-loading"><div class="portal-spinner"></div></div>';
+        main.innerHTML = this._projectsSkeleton();
+
+        const currentStatus = statusFilter || 'all';
 
         try {
-            const res = await this.apiFetch(`?action=client_projects&page=${page || 1}`);
+            const res = await this.apiFetch(`?action=client_projects&page=${page || 1}&status=${currentStatus}`);
             const data = await res.json();
             if (!data.success) throw new Error(data.error);
 
+            const totalPages = Math.ceil(data.total / data.per_page);
+
+            // Status filter tabs
+            const statuses = [
+                { key: 'all', label: 'الكل' },
+                { key: 'active', label: 'نشط' },
+                { key: 'in_progress', label: 'قيد التنفيذ' },
+                { key: 'review', label: 'مراجعة' },
+                { key: 'completed', label: 'مكتمل' }
+            ];
+
+            const filterHtml = `
+                <div class="portal-filter-tabs">
+                    ${statuses.map(s => `
+                        <button class="portal-filter-tab${s.key === currentStatus ? ' portal-filter-active' : ''}"
+                            onclick="PortalApp.showScreen('projects', {page: 1, status: '${s.key}'})">
+                            ${this.escHtml(s.label)}
+                        </button>
+                    `).join('')}
+                </div>
+            `;
+
             if (data.projects.length === 0) {
-                main.innerHTML = `<div class="portal-error"><p>لا توجد مشاريع حالياً</p></div>`;
+                main.innerHTML = `
+                    <div class="portal-projects">
+                        <div class="portal-page-header">
+                            <h2 class="portal-page-title">المشاريع</h2>
+                            <span class="portal-page-count">${data.total} مشروع</span>
+                        </div>
+                        ${filterHtml}
+                        <div class="portal-empty-state">
+                            <div class="portal-empty-icon"><i data-lucide="folder-open"></i></div>
+                            <h3>لا توجد مشاريع</h3>
+                            <p>${currentStatus !== 'all' ? 'لا توجد مشاريع بهذه الحالة. جرّب تصفية مختلفة' : 'لم تُضف أي مشاريع بعد'}</p>
+                        </div>
+                    </div>
+                `;
+                if (typeof lucide !== 'undefined') lucide.createIcons();
                 return;
             }
 
             main.innerHTML = `
                 <div class="portal-projects">
-                    <h2 class="portal-page-title">المشاريع</h2>
+                    <div class="portal-page-header">
+                        <h2 class="portal-page-title">المشاريع</h2>
+                        <span class="portal-page-count">${data.total} مشروع</span>
+                    </div>
+                    ${filterHtml}
                     <div class="portal-projects-grid">
-                        ${data.projects.map(p => `
-                            <div class="portal-project-card" onclick="PortalApp.showScreen('project_detail', {projectId: '${this.escAttr(p.id)}'})">
+                        ${data.projects.map((p, idx) => `
+                            <div class="portal-project-card" style="animation-delay:${idx * 0.06}s" onclick="PortalApp.showScreen('project_detail', {projectId: '${this.escAttr(p.id)}'})">
                                 <div class="portal-project-cover">
-                                    ${p.cover_image ? `<img src="${this.escAttr(p.cover_image)}" alt="" loading="lazy">` : '<div class="portal-project-cover-placeholder"><i data-lucide="folder-open" style="width:48px;height:48px"></i></div>'}
+                                    ${p.cover_image
+                                        ? `<img src="${this.escAttr(p.cover_image)}" alt="" loading="lazy">`
+                                        : `<div class="portal-project-cover-placeholder"><i data-lucide="folder-open" style="width:48px;height:48px"></i></div>`
+                                    }
                                     <span class="portal-status-badge status-${this.escAttr(p.status)}">${this.statusLabel(p.status)}</span>
                                 </div>
                                 <div class="portal-project-info">
                                     <h3>${this.escHtml(p.name)}</h3>
-                                    ${p.description ? `<p>${this.escHtml(p.description).substring(0, 100)}</p>` : ''}
+                                    ${p.description ? `<p class="portal-project-desc">${this.escHtml(p.description).substring(0, 120)}${p.description.length > 120 ? '...' : ''}</p>` : ''}
                                     <div class="portal-project-meta">
-                                        ${p.deadline ? `<span><i data-lucide="calendar" style="width:14px;height:14px;display:inline"></i> ${this.formatDate(p.deadline)}</span>` : ''}
+                                        ${p.deadline ? `<span class="portal-meta-item"><i data-lucide="calendar" style="width:14px;height:14px"></i> ${this.formatDate(p.deadline)}</span>` : ''}
+                                        ${p.start_date ? `<span class="portal-meta-item"><i data-lucide="play" style="width:14px;height:14px"></i> ${this.formatDate(p.start_date)}</span>` : ''}
                                     </div>
                                 </div>
                             </div>
                         `).join('')}
                     </div>
+                    ${this._renderPagination(data.total, page || 1, data.per_page, currentStatus)}
                 </div>
             `;
             if (typeof lucide !== 'undefined') lucide.createIcons();
         } catch (err) {
-            main.innerHTML = `<div class="portal-error"><p>خطأ في تحميل المشاريع</p></div>`;
+            main.innerHTML = `
+                <div class="portal-error-state">
+                    <div class="portal-error-icon"><i data-lucide="alert-triangle"></i></div>
+                    <h3>خطأ في تحميل المشاريع</h3>
+                    <p>${this.escHtml(err.message)}</p>
+                    <button class="portal-btn-retry" onclick="PortalApp.showScreen('projects')">
+                        <i data-lucide="refresh-cw"></i> إعادة المحاولة
+                    </button>
+                </div>
+            `;
+            if (typeof lucide !== 'undefined') lucide.createIcons();
         }
+    },
+
+    _renderPagination(total, currentPage, perPage, statusFilter) {
+        const totalPages = Math.ceil(total / perPage);
+        if (totalPages <= 1) return '';
+
+        const status = statusFilter || 'all';
+        let pages = [];
+        for (let i = 1; i <= totalPages; i++) {
+            if (i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
+                pages.push(i);
+            } else if (pages[pages.length - 1] !== '...') {
+                pages.push('...');
+            }
+        }
+
+        return `
+            <div class="portal-pagination">
+                <button class="portal-pagination-btn"
+                    ${currentPage <= 1 ? 'disabled' : ''}
+                    onclick="PortalApp.showScreen('projects', {page: ${currentPage - 1}, status: '${status}'})">
+                    <i data-lucide="chevron-right" style="width:16px;height:16px"></i>
+                </button>
+                ${pages.map(p => p === '...'
+                    ? '<span class="portal-pagination-dots">...</span>'
+                    : `<button class="portal-pagination-btn${p === currentPage ? ' portal-pagination-active' : ''}"
+                        onclick="PortalApp.showScreen('projects', {page: ${p}, status: '${status}'})">${p}</button>`
+                ).join('')}
+                <button class="portal-pagination-btn"
+                    ${currentPage >= totalPages ? 'disabled' : ''}
+                    onclick="PortalApp.showScreen('projects', {page: ${currentPage + 1}, status: '${status}'})">
+                    <i data-lucide="chevron-left" style="width:16px;height:16px"></i>
+                </button>
+            </div>
+        `;
     },
 
     // ============ Project Detail (stub) ============
@@ -333,8 +614,19 @@ const PortalApp = {
         const main = document.getElementById('portalMain');
         main.innerHTML = '<div class="portal-loading"><div class="portal-spinner"></div></div>';
         this.currentProject = projectId;
-        // Phase 4: Full implementation
-        main.innerHTML = `<div class="portal-error"><p>تفاصيل المشروع — قيد التطوير</p></div>`;
+        main.innerHTML = `
+            <div class="portal-stub-screen">
+                <button class="portal-back-btn" onclick="PortalApp.showScreen('projects')">
+                    <i data-lucide="arrow-right"></i> رجوع للمشاريع
+                </button>
+                <div class="portal-empty-state">
+                    <div class="portal-empty-icon"><i data-lucide="folder-open"></i></div>
+                    <h3>تفاصيل المشروع</h3>
+                    <p>هذه الشاشة قيد التطوير — سيتم إضافتها في المرحلة القادمة</p>
+                </div>
+            </div>
+        `;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
     },
 
     // ============ File Preview (stub) ============
@@ -342,24 +634,51 @@ const PortalApp = {
         const main = document.getElementById('portalMain');
         main.innerHTML = '<div class="portal-loading"><div class="portal-spinner"></div></div>';
         this.currentFile = fileId;
-        // Phase 4: Full implementation
-        main.innerHTML = `<div class="portal-error"><p>معاينة الملف — قيد التطوير</p></div>`;
+        main.innerHTML = `
+            <div class="portal-stub-screen">
+                <button class="portal-back-btn" onclick="history.back()">
+                    <i data-lucide="arrow-right"></i> رجوع
+                </button>
+                <div class="portal-empty-state">
+                    <div class="portal-empty-icon"><i data-lucide="file"></i></div>
+                    <h3>معاينة الملف</h3>
+                    <p>هذه الشاشة قيد التطوير — سيتم إضافتها في المرحلة القادمة</p>
+                </div>
+            </div>
+        `;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
     },
 
     // ============ Notifications (stub) ============
     async renderNotifications() {
         const main = document.getElementById('portalMain');
         main.innerHTML = '<div class="portal-loading"><div class="portal-spinner"></div></div>';
-        // Phase 4: Full implementation
-        main.innerHTML = `<div class="portal-error"><p>الإشعارات — قيد التطوير</p></div>`;
+        main.innerHTML = `
+            <div class="portal-stub-screen">
+                <div class="portal-empty-state">
+                    <div class="portal-empty-icon"><i data-lucide="bell"></i></div>
+                    <h3>الإشعارات</h3>
+                    <p>هذه الشاشة قيد التطوير — سيتم إضافتها في المرحلة القادمة</p>
+                </div>
+            </div>
+        `;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
     },
 
     // ============ Profile (stub) ============
     async renderProfile() {
         const main = document.getElementById('portalMain');
         main.innerHTML = '<div class="portal-loading"><div class="portal-spinner"></div></div>';
-        // Phase 4: Full implementation
-        main.innerHTML = `<div class="portal-error"><p>الملف الشخصي — قيد التطوير</p></div>`;
+        main.innerHTML = `
+            <div class="portal-stub-screen">
+                <div class="portal-empty-state">
+                    <div class="portal-empty-icon"><i data-lucide="user"></i></div>
+                    <h3>الملف الشخصي</h3>
+                    <p>هذه الشاشة قيد التطوير — سيتم إضافتها في المرحلة القادمة</p>
+                </div>
+            </div>
+        `;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
     },
 
     // ============ Notifications Badge ============
@@ -402,7 +721,6 @@ const PortalApp = {
 
     initClickOutside() {
         document.addEventListener('click', (e) => {
-            // Close user dropdown
             if (this.userMenuOpen) {
                 const menu = document.querySelector('.portal-user-menu');
                 if (menu && !menu.contains(e.target)) {
@@ -451,15 +769,25 @@ const PortalApp = {
     escHtml(str) {
         if (!str) return '';
         const div = document.createElement('div');
-        div.textContent = str;
+        div.textContent = String(str);
         return div.innerHTML;
     },
 
     escAttr(str) {
         if (!str) return '';
-        return str.replace(/[&"'<>]/g, c => ({
+        return String(str).replace(/[&"'<>]/g, c => ({
             '&': '&amp;', '"': '&quot;', "'": '&#39;', '<': '&lt;', '>': '&gt;'
         })[c]);
+    },
+
+    // ============ File Icon Helper ============
+    getFileIcon(mimeType) {
+        if (!mimeType) return '<i data-lucide="file" style="width:16px;height:16px"></i>';
+        if (mimeType.startsWith('image/')) return '<i data-lucide="image" style="width:16px;height:16px;color:#10b981"></i>';
+        if (mimeType.startsWith('video/')) return '<i data-lucide="video" style="width:16px;height:16px;color:#8b5cf6"></i>';
+        if (mimeType.startsWith('audio/')) return '<i data-lucide="music" style="width:16px;height:16px;color:#f59e0b"></i>';
+        if (mimeType.includes('pdf')) return '<i data-lucide="file-text" style="width:16px;height:16px;color:#ef4444"></i>';
+        return '<i data-lucide="file" style="width:16px;height:16px"></i>';
     },
 
     // ============ Formatters ============
@@ -471,7 +799,9 @@ const PortalApp = {
             'completed': 'مكتمل',
             'pending': 'بانتظار',
             'approved': 'تمت الموافقة',
-            'revision_requested': 'طلب تعديل'
+            'revision_requested': 'طلب تعديل',
+            'draft': 'مسودة',
+            'archived': 'مؤرشف'
         };
         return labels[status] || status;
     },
