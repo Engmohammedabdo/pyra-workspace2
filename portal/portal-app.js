@@ -1,7 +1,7 @@
 /**
  * Pyra Workspace — Client Portal App
  * Frontend controller for the client portal
- * Phase 7: Email Notifications + Profile Enhancement
+ * Phase 8: Testing + Polish + QA
  */
 const PortalApp = {
 
@@ -1396,6 +1396,8 @@ const PortalApp = {
     },
 
     async markAllNotifRead() {
+        const btn = document.querySelector('[onclick*="markAllNotifRead"]');
+        if (btn) { btn.disabled = true; btn.classList.add('portal-btn-loading'); }
         try {
             await this.apiFetch('?action=client_mark_all_read', { method: 'POST' });
             this.toast('تم تعيين كل الإشعارات كمقروءة ✓', 'success');
@@ -1404,12 +1406,11 @@ const PortalApp = {
             this.renderNotifications(this._notifPage);
         } catch (e) {
             this.toast('حدث خطأ', 'error');
+            if (btn) { btn.disabled = false; btn.classList.remove('portal-btn-loading'); }
         }
     },
 
     // ============ Comments ============
-    _commentsLoading: false,
-
     async loadComments(projectId, fileId) {
         const container = document.getElementById('commentsSection');
         if (!container) return;
@@ -1848,11 +1849,11 @@ const PortalApp = {
                 // Show success checkmark on button
                 if (btn) {
                     btn.innerHTML = '<i data-lucide="check-circle" style="width:16px;height:16px"></i> تم الحفظ';
-                    btn.classList.add('portal-btn--success');
+                    btn.classList.add('portal-btn--saved');
                     if (typeof lucide !== 'undefined') lucide.createIcons();
                     setTimeout(() => {
                         btn.innerHTML = '<i data-lucide="save" style="width:16px;height:16px"></i> حفظ التغييرات';
-                        btn.classList.remove('portal-btn--success');
+                        btn.classList.remove('portal-btn--saved');
                         if (typeof lucide !== 'undefined') lucide.createIcons();
                     }, 2000);
                 }
@@ -1912,11 +1913,11 @@ const PortalApp = {
                 // Show success checkmark on button
                 if (btn) {
                     btn.innerHTML = '<i data-lucide="check-circle" style="width:16px;height:16px"></i> تم التغيير';
-                    btn.classList.add('portal-btn--success');
+                    btn.classList.add('portal-btn--saved');
                     if (typeof lucide !== 'undefined') lucide.createIcons();
                     setTimeout(() => {
                         btn.innerHTML = '<i data-lucide="key" style="width:16px;height:16px"></i> تغيير كلمة المرور';
-                        btn.classList.remove('portal-btn--success');
+                        btn.classList.remove('portal-btn--saved');
                         if (typeof lucide !== 'undefined') lucide.createIcons();
                     }, 2000);
                 }
@@ -1930,9 +1931,12 @@ const PortalApp = {
     },
 
     // ============ Notifications Badge ============
+    _notifPollTimer: null,
+
     initNotifications() {
         this.updateUnreadCount();
-        setInterval(() => this.updateUnreadCount(), 60000);
+        if (this._notifPollTimer) clearInterval(this._notifPollTimer);
+        this._notifPollTimer = setInterval(() => this.updateUnreadCount(), 60000);
     },
 
     async updateUnreadCount() {

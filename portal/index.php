@@ -1166,7 +1166,7 @@ $logoUrl = $publicSettings['app_logo_url'] ?? '';
 
             <div class="portal-user-menu">
                 <button class="portal-user-trigger" id="userMenuTrigger" onclick="PortalApp.toggleUserMenu()">
-                    <span class="portal-user-avatar"><?= mb_substr($clientData['name'] ?? 'م', 0, 1) ?></span>
+                    <span class="portal-user-avatar"><?= htmlspecialchars(mb_substr($clientData['name'] ?? 'م', 0, 1)) ?></span>
                     <span class="portal-user-name"><?= htmlspecialchars($clientData['name'] ?? '') ?></span>
                     <i data-lucide="chevron-down" class="portal-user-chevron"></i>
                 </button>

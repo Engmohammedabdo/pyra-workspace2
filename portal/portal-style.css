@@ -2281,9 +2281,9 @@
     }
 
     .portal-comment--nested {
-        margin-right: 36px;
-        padding-right: 14px;
-        border-right: 2px solid var(--border-color);
+        margin-inline-start: 36px;
+        padding-inline-start: 14px;
+        border-inline-start: 2px solid var(--border-color);
     }
 
     .portal-comment-avatar {
@@ -2503,7 +2503,7 @@
         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23505c74' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
         background-repeat: no-repeat;
         background-position: left 14px center;
-        padding-left: 36px;
+        padding-inline-end: 36px;
         cursor: pointer;
 
         & option {
@@ -2606,11 +2606,11 @@
         transition: color 0.35s ease;
     }
 
-    /* Success button state */
-    .portal-btn--success {
-        background: #10b981 !important;
-        border-color: #10b981 !important;
-        color: white !important;
+    /* Success saved state (profile/password save confirmation) */
+    .portal-btn--saved {
+        background: #10b981;
+        border-color: #10b981;
+        color: white;
         pointer-events: none;
         animation: portalSuccessPulse 0.4s ease;
     }
@@ -2822,7 +2822,7 @@
         }
 
         .portal-comment--nested {
-            margin-right: 24px;
+            margin-inline-start: 24px;
         }
     }
 
@@ -3036,8 +3036,8 @@
         }
 
         .portal-comment--nested {
-            margin-right: 16px;
-            padding-right: 10px;
+            margin-inline-start: 16px;
+            padding-inline-start: 10px;
         }
 
         .portal-comment-form {

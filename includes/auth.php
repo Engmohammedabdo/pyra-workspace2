@@ -1573,6 +1573,7 @@ function _sendSmtpEmail(string $to, string $subject, string $body, string $fromE
         }
         return $success;
     } catch (\Throwable $e) {
+        if (isset($sock) && is_resource($sock)) fclose($sock);
         _logEmailError($to, $subject, $e->getMessage());
         return false;
     }

@@ -1904,23 +1904,25 @@ switch ($action) {
                         'message' => 'تم إنشاء حسابك بنجاح. يمكنك الآن تصفح مشاريعك ومتابعة الملفات.'
                     ]);
 
-                    // Send welcome email (fire-and-forget)
-                    $portalUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http')
-                        . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost')
-                        . dirname(dirname($_SERVER['SCRIPT_NAME'])) . '/portal/';
-                    sendClientEmail(
-                        $email,
-                        'مرحباً في Pyramedia Portal — حسابك جاهز',
-                        getEmailTemplate(
-                            'مرحباً بك في Pyramedia Portal',
-                            'مرحباً <strong>' . htmlspecialchars($name) . '</strong>،<br><br>'
-                            . 'تم إنشاء حسابك بنجاح. يمكنك الآن تسجيل الدخول والوصول إلى مشاريعك ومتابعة الملفات.<br><br>'
-                            . '<strong>البريد:</strong> ' . htmlspecialchars($email) . '<br>'
-                            . '<strong>كلمة المرور:</strong> تم إرسالها من قبل المسؤول',
-                            $portalUrl,
-                            'دخول البوابة'
-                        )
-                    );
+                    // Send welcome email (fire-and-forget, never breaks main flow)
+                    try {
+                        $portalUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http')
+                            . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost')
+                            . dirname(dirname($_SERVER['SCRIPT_NAME'])) . '/portal/';
+                        sendClientEmail(
+                            $email,
+                            'مرحباً في Pyramedia Portal — حسابك جاهز',
+                            getEmailTemplate(
+                                'مرحباً بك في Pyramedia Portal',
+                                'مرحباً <strong>' . htmlspecialchars($name) . '</strong>،<br><br>'
+                                . 'تم إنشاء حسابك بنجاح. يمكنك الآن تسجيل الدخول والوصول إلى مشاريعك ومتابعة الملفات.<br><br>'
+                                . '<strong>البريد:</strong> ' . htmlspecialchars($email) . '<br>'
+                                . '<strong>كلمة المرور:</strong> تم إرسالها من قبل المسؤول',
+                                $portalUrl,
+                                'دخول البوابة'
+                            )
+                        );
+                    } catch (\Throwable $e) { /* email failure is non-critical */ }
 
                     $clientData = $result['data'][0] ?? $data;
                     unset($clientData['password_hash']);
@@ -2192,18 +2194,20 @@ switch ($action) {
 
                 // Email primary clients when file needs approval (fire-and-forget)
                 if ($needsApproval && ($c['role'] ?? '') === 'primary' && !empty($c['email'])) {
-                    sendClientEmail(
-                        $c['email'],
-                        'ملف جديد بانتظار موافقتك — ' . htmlspecialchars($project['name']),
-                        getEmailTemplate(
-                            'ملف جديد يحتاج موافقتك',
-                            'مرحباً <strong>' . htmlspecialchars($c['name'] ?? '') . '</strong>،<br><br>'
-                            . 'تم رفع ملف جديد في مشروع <strong>' . htmlspecialchars($project['name']) . '</strong> ويحتاج موافقتك.<br><br>'
-                            . '📄 <strong>' . htmlspecialchars($fileName) . '</strong>',
-                            $portalUrl . '#file_preview/' . urlencode($fileId),
-                            'عرض الملف والموافقة'
-                        )
-                    );
+                    try {
+                        sendClientEmail(
+                            $c['email'],
+                            'ملف جديد بانتظار موافقتك — ' . htmlspecialchars($project['name']),
+                            getEmailTemplate(
+                                'ملف جديد يحتاج موافقتك',
+                                'مرحباً <strong>' . htmlspecialchars($c['name'] ?? '') . '</strong>،<br><br>'
+                                . 'تم رفع ملف جديد في مشروع <strong>' . htmlspecialchars($project['name']) . '</strong> ويحتاج موافقتك.<br><br>'
+                                . '📄 <strong>' . htmlspecialchars($fileName) . '</strong>',
+                                $portalUrl . '#file_preview/' . urlencode($fileId),
+                                'عرض الملف والموافقة'
+                            )
+                        );
+                    } catch (\Throwable $e) { /* email failure is non-critical */ }
                 }
             }
         }
@@ -2271,18 +2275,20 @@ switch ($action) {
 
                         // Email notification (fire-and-forget)
                         if (!empty($c['email'])) {
-                            sendClientEmail(
-                                $c['email'],
-                                'رد جديد على تعليقك — ' . htmlspecialchars($p['name']),
-                                getEmailTemplate(
-                                    'رد جديد من الفريق',
-                                    'مرحباً <strong>' . htmlspecialchars($c['name'] ?? '') . '</strong>،<br><br>'
-                                    . '<strong>' . htmlspecialchars($displayName) . '</strong> رد على تعليقك في مشروع <strong>' . htmlspecialchars($p['name']) . '</strong>:<br><br>'
-                                    . '<em style="color:#8892a8;">"' . htmlspecialchars(mb_substr($text, 0, 150)) . '"</em>',
-                                    $portalUrl . '#project_detail/' . urlencode($projectId),
-                                    'عرض التعليق'
-                                )
-                            );
+                            try {
+                                sendClientEmail(
+                                    $c['email'],
+                                    'رد جديد على تعليقك — ' . htmlspecialchars($p['name']),
+                                    getEmailTemplate(
+                                        'رد جديد من الفريق',
+                                        'مرحباً <strong>' . htmlspecialchars($c['name'] ?? '') . '</strong>،<br><br>'
+                                        . '<strong>' . htmlspecialchars($displayName) . '</strong> رد على تعليقك في مشروع <strong>' . htmlspecialchars($p['name']) . '</strong>:<br><br>'
+                                        . '<em style="color:#8892a8;">"' . htmlspecialchars(mb_substr($text, 0, 150)) . '"</em>',
+                                        $portalUrl . '#project_detail/' . urlencode($projectId),
+                                        'عرض التعليق'
+                                    )
+                                );
+                            } catch (\Throwable $e) { /* email failure is non-critical */ }
                         }
                     }
                 }
