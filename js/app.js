@@ -4690,6 +4690,636 @@ const App = {
         html = html.replace(/(<\/(?:h[1-6]|pre|ul|ol|table|blockquote|hr)>)\s*<\/p>/g, '$1');
 
         return html;
+    },
+
+    // ═══════════════════════════════════════════════════════════════
+    // QUOTATION SYSTEM (Admin)
+    // ═══════════════════════════════════════════════════════════════
+
+    _quoteClients: [],
+
+    async showQuotesPanel() {
+        if (!this.isAdmin()) { this.toast('Admin access required', 'error'); return; }
+        try {
+            const res = await this.apiFetch('api/api.php?action=manage_quotes');
+            const data = await res.json();
+            if (!data.success) { this.toast(data.error || 'Failed to load quotes', 'error'); return; }
+            this._renderQuotesPanel(data.quotes || [], 'all');
+        } catch (e) { this.toast('Error: ' + e.message, 'error'); }
+    },
+
+    _renderQuotesPanel(quotes, filter) {
+        const existing = document.getElementById('quotesPanelOverlay');
+        if (existing) existing.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'quotesPanelOverlay';
+        overlay.className = 'um-overlay';
+
+        const statusLabels = {
+            draft: { label: 'مسودة', labelEn: 'Draft', cls: 'draft' },
+            sent: { label: 'مُرسل', labelEn: 'Sent', cls: 'sent' },
+            viewed: { label: 'تم الاطلاع', labelEn: 'Viewed', cls: 'viewed' },
+            signed: { label: 'موقّع', labelEn: 'Signed', cls: 'signed' },
+            expired: { label: 'منتهي', labelEn: 'Expired', cls: 'expired' },
+            cancelled: { label: 'ملغي', labelEn: 'Cancelled', cls: 'cancelled' }
+        };
+
+        const filtered = filter === 'all' ? quotes : quotes.filter(q => q.status === filter);
+
+        const tabs = ['all', 'draft', 'sent', 'viewed', 'signed'].map(t => {
+            const count = t === 'all' ? quotes.length : quotes.filter(q => q.status === t).length;
+            return `<button class="quote-filter-tab ${filter === t ? 'active' : ''}" onclick="App._filterQuotes('${t}')">${t === 'all' ? 'All' : (statusLabels[t]?.labelEn || t)} (${count})</button>`;
+        }).join('');
+
+        let rows = '';
+        if (filtered.length === 0) {
+            rows = '<div class="quote-empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><p>No quotes found</p></div>';
+        } else {
+            filtered.forEach(q => {
+                const s = statusLabels[q.status] || { label: q.status, cls: 'draft' };
+                const date = q.estimate_date ? new Date(q.estimate_date).toLocaleDateString('en-GB') : '—';
+                const total = parseFloat(q.total || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
+                rows += `<div class="quote-list-item" onclick="App.showQuoteBuilder('${this.escAttr(q.id)}')">
+                    <div class="quote-list-number">${this.escHtml(q.quote_number)}</div>
+                    <div class="quote-list-client">${this.escHtml(q.client_name || q.client_company || '—')}</div>
+                    <div class="quote-list-project">${this.escHtml(q.project_name || '—')}</div>
+                    <div class="quote-list-total">${total} ${this.escHtml(q.currency || 'AED')}</div>
+                    <div class="quote-list-date">${date}</div>
+                    <div class="quote-list-status"><span class="quote-status-badge ${s.cls}">${s.labelEn}</span></div>
+                    <div class="quote-list-actions" onclick="event.stopPropagation()">
+                        <button class="btn btn-sm btn-ghost" onclick="App.duplicateQuote('${this.escAttr(q.id)}')" title="Duplicate">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        </button>
+                        <button class="btn btn-sm btn-ghost" style="color:var(--danger)" onclick="App.deleteQuote('${this.escAttr(q.id)}')" title="Delete">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        </button>
+                    </div>
+                </div>`;
+            });
+        }
+
+        overlay.innerHTML = `
+            <div class="users-panel" style="max-width:1100px;">
+                <div class="users-panel-header">
+                    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> Quotations</h2>
+                    <div style="display:flex;gap:8px;">
+                        <button class="btn btn-sm btn-primary" onclick="App.showQuoteBuilder()">+ New Quote</button>
+                        <button class="btn btn-sm btn-ghost" onclick="document.getElementById('quotesPanelOverlay').remove()">✕</button>
+                    </div>
+                </div>
+                <div class="quote-filter-tabs">${tabs}</div>
+                <div class="users-panel-body" id="quotesListBody">
+                    <div class="quote-list-header">
+                        <div>Number</div>
+                        <div>Client</div>
+                        <div>Project</div>
+                        <div>Total</div>
+                        <div>Date</div>
+                        <div>Status</div>
+                        <div></div>
+                    </div>
+                    ${rows}
+                </div>
+            </div>`;
+
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+        // Store quotes for filtering
+        this._quotesCache = quotes;
+    },
+
+    _quotesCache: [],
+
+    _filterQuotes(filter) {
+        this._renderQuotesPanel(this._quotesCache, filter);
+    },
+
+    async showQuoteBuilder(quoteId = null) {
+        // Remove quotes panel if open
+        const qPanel = document.getElementById('quotesPanelOverlay');
+        if (qPanel) qPanel.remove();
+
+        // Load clients list
+        try {
+            const cRes = await this.apiFetch('api/api.php?action=get_clients_list');
+            const cData = await cRes.json();
+            this._quoteClients = cData.clients || [];
+        } catch (e) { this._quoteClients = []; }
+
+        let quote = null;
+        let items = [];
+
+        if (quoteId) {
+            try {
+                const res = await this.apiFetch('api/api.php?action=get_quote_detail&id=' + encodeURIComponent(quoteId));
+                const data = await res.json();
+                if (data.success) {
+                    quote = data.quote;
+                    items = data.items || [];
+                }
+            } catch (e) { this.toast('Error loading quote', 'error'); return; }
+        }
+
+        const isEdit = !!quote;
+        const today = new Date().toISOString().split('T')[0];
+        const expiryDefault = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+
+        // Build client options
+        let clientOptions = '<option value="">— Select Client —</option>';
+        this._quoteClients.forEach(c => {
+            const sel = (quote && quote.client_id === c.id) ? 'selected' : '';
+            clientOptions += `<option value="${this.escAttr(c.id)}" data-name="${this.escAttr(c.name || '')}" data-email="${this.escAttr(c.email || '')}" data-company="${this.escAttr(c.company || '')}" data-phone="${this.escAttr(c.phone || '')}" data-address="${this.escAttr(c.address || '')}" ${sel}>${this.escHtml(c.name)} — ${this.escHtml(c.company || '')}</option>`;
+        });
+
+        // Build items rows
+        let itemsHtml = '';
+        if (items.length > 0) {
+            items.forEach((item, i) => {
+                itemsHtml += this._quoteItemRow(i, item);
+            });
+        } else {
+            itemsHtml = this._quoteItemRow(0, {});
+        }
+
+        const existing = document.getElementById('quoteBuilderOverlay');
+        if (existing) existing.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'quoteBuilderOverlay';
+        overlay.className = 'quote-builder-overlay';
+
+        // Company logo URL
+        const logoUrl = 'https://lh3.googleusercontent.com/d/1OlPSnJfVk4fIQpKosLB58k7sZmxMfQuQ';
+
+        overlay.innerHTML = `
+            <div class="quote-builder">
+                <div class="quote-toolbar">
+                    <div class="quote-toolbar-left">
+                        <button class="btn btn-sm btn-ghost" onclick="App.closeQuoteBuilder()" title="Back">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                        </button>
+                        <span class="quote-toolbar-title">${isEdit ? 'Edit Quote: ' + this.escHtml(quote.quote_number) : 'New Quote'}</span>
+                    </div>
+                    <div class="quote-toolbar-right">
+                        <button class="btn btn-sm" onclick="App.saveQuote(false)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                            Save Draft
+                        </button>
+                        ${isEdit && quote.status === 'draft' ? `<button class="btn btn-sm btn-primary" onclick="App.saveQuote(true)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                            Save & Send
+                        </button>` : ''}
+                        <button class="btn btn-sm" onclick="App.generateQuotePDF()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                            PDF
+                        </button>
+                    </div>
+                </div>
+
+                <div class="quote-page" id="quotePageContent">
+                    <!-- ═══ HEADER: Logo + Client Info ═══ -->
+                    <div class="quote-top-section">
+                        <div class="quote-logo-area">
+                            <img src="${logoUrl}" alt="PYRAMEDIA X" class="quote-logo-img" crossorigin="anonymous">
+                        </div>
+                        <div class="quote-client-fields">
+                            <div class="quote-client-row">
+                                <div class="quote-cf">
+                                    <label><svg viewBox="0 0 24 24" fill="none" stroke="#F97316" stroke-width="2" width="14" height="14"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> CLIENT NAME</label>
+                                    <select class="quote-input" id="qClientSelect" onchange="App._selectQuoteClient(this.value)">
+                                        ${clientOptions}
+                                    </select>
+                                </div>
+                                <div class="quote-cf">
+                                    <label><svg viewBox="0 0 24 24" fill="none" stroke="#F97316" stroke-width="2" width="14" height="14"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg> EMAIL</label>
+                                    <input type="email" class="quote-input" id="qClientEmail" value="${this.escAttr(quote?.client_email || '')}" placeholder="client@email.com">
+                                </div>
+                                <div class="quote-cf">
+                                    <label><svg viewBox="0 0 24 24" fill="none" stroke="#F97316" stroke-width="2" width="14" height="14"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg> ADDRESS</label>
+                                    <input type="text" class="quote-input" id="qClientAddress" value="${this.escAttr(quote?.client_address || '')}" placeholder="City, Country">
+                                </div>
+                            </div>
+                            <div class="quote-client-row">
+                                <div class="quote-cf">
+                                    <label><svg viewBox="0 0 24 24" fill="none" stroke="#F97316" stroke-width="2" width="14" height="14"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> CONTACT PERSON</label>
+                                    <input type="text" class="quote-input" id="qClientName" value="${this.escAttr(quote?.client_name || '')}" placeholder="Contact name">
+                                </div>
+                                <div class="quote-cf">
+                                    <label><svg viewBox="0 0 24 24" fill="none" stroke="#F97316" stroke-width="2" width="14" height="14"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg> PHONE</label>
+                                    <input type="text" class="quote-input" id="qClientPhone" value="${this.escAttr(quote?.client_phone || '')}" placeholder="+971 XX XXX XXXX">
+                                </div>
+                            </div>
+                            <input type="hidden" id="qClientCompany" value="${this.escAttr(quote?.client_company || '')}">
+                        </div>
+                    </div>
+
+                    <!-- ═══ ORANGE DIVIDER ═══ -->
+                    <div class="quote-divider"></div>
+
+                    <!-- ═══ INVOICE DETAILS ROW ═══ -->
+                    <div class="quote-details-row">
+                        <div class="quote-detail-item">
+                            <label><svg viewBox="0 0 24 24" fill="none" stroke="#F97316" stroke-width="2" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> INVOICE NUMBER</label>
+                            <div class="quote-detail-value" id="qNumber">${this.escHtml(quote?.quote_number || 'Auto')}</div>
+                        </div>
+                        <div class="quote-detail-item">
+                            <label><svg viewBox="0 0 24 24" fill="none" stroke="#F97316" stroke-width="2" width="14" height="14"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> ESTIMATE DATE</label>
+                            <input type="date" class="quote-input" id="qDate" value="${this.escAttr(quote?.estimate_date || today)}">
+                        </div>
+                        <div class="quote-detail-item">
+                            <label><svg viewBox="0 0 24 24" fill="none" stroke="#F97316" stroke-width="2" width="14" height="14"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> EXPIRY DATE</label>
+                            <input type="date" class="quote-input" id="qExpiry" value="${this.escAttr(quote?.expiry_date || expiryDefault)}">
+                        </div>
+                        <div class="quote-detail-item">
+                            <label><svg viewBox="0 0 24 24" fill="none" stroke="#F97316" stroke-width="2" width="14" height="14"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/></svg> PROJECT NAME</label>
+                            <input type="text" class="quote-input" id="qProject" value="${this.escAttr(quote?.project_name || '')}" placeholder="Project name">
+                        </div>
+                    </div>
+
+                    <!-- Hidden tax/currency fields -->
+                    <input type="hidden" id="qTaxRate" value="${quote?.tax_rate ?? 5}">
+                    <input type="hidden" id="qCurrency" value="${quote?.currency || 'AED'}">
+                    <input type="hidden" id="qCompanyName" value="PYRAMEDIA X">
+
+                    <!-- ═══ ITEMS TABLE ═══ -->
+                    <div class="quote-items-section">
+                        <h3 class="quote-items-title"><span class="quote-orange-dot"></span> ITEM & DESCRIPTION</h3>
+                        <table class="quote-items-table">
+                            <thead>
+                                <tr>
+                                    <th class="qi-th-desc">ITEM & DESCRIPTION</th>
+                                    <th class="qi-th-num">QTY</th>
+                                    <th class="qi-th-num">RATE</th>
+                                    <th class="qi-th-num">AMOUNT</th>
+                                    <th class="qi-th-act"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="quoteItemsBody">
+                                ${itemsHtml}
+                            </tbody>
+                        </table>
+                        <button class="quote-add-item" onclick="App._addQuoteItem()">
+                            <span style="color:#F97316;font-weight:700">+</span> Add Service
+                        </button>
+                    </div>
+
+                    <!-- ═══ TOTAL BOX ═══ -->
+                    <div class="quote-total-section">
+                        <div class="quote-total-box">
+                            <div class="quote-total-label">TOTAL</div>
+                            <div class="quote-total-value"><span id="qTotal">${parseFloat(quote?.total || 0).toFixed(2)}</span></div>
+                        </div>
+                    </div>
+                    <div id="qSubtotal" style="display:none">${parseFloat(quote?.subtotal || 0).toFixed(2)}</div>
+                    <div id="qTaxAmount" style="display:none">${parseFloat(quote?.tax_amount || 0).toFixed(2)}</div>
+                    <div id="qTaxRateDisplay" style="display:none">${quote?.tax_rate ?? 5}</div>
+                    <div id="qCurrencyDisplay" style="display:none">${quote?.currency || 'AED'}</div>
+
+                    <!-- ═══ NOTES ═══ -->
+                    <div class="quote-notes-section">
+                        <h3 class="quote-section-label"><svg viewBox="0 0 24 24" fill="none" stroke="#F97316" stroke-width="2" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> NOTES</h3>
+                        <textarea class="quote-input quote-notes-area" id="qNotes" rows="3" placeholder="Additional notes for the client (appears on the PDF in small font below the services table)...">${this.escHtml(quote?.notes || '')}</textarea>
+                    </div>
+
+                    ${quote?.signature_data ? `
+                        <div class="quote-signature-display">
+                            <h3 class="quote-section-label">Client Signature</h3>
+                            <img src="${this.escAttr(quote.signature_data)}" alt="Signature" style="max-width:300px;max-height:150px;">
+                            <p style="margin:8px 0 0;font-size:13px;color:#666;">Signed by: ${this.escHtml(quote.signed_by || '—')} on ${quote.signed_at ? new Date(quote.signed_at).toLocaleString() : '—'}</p>
+                        </div>
+                    ` : ''}
+
+                    <!-- ═══ BANK ACCOUNT DETAILS (FIXED) ═══ -->
+                    <div class="quote-bank-section">
+                        <h3 class="quote-bank-title">Bank account details</h3>
+                        <div class="quote-bank-grid">
+                            <div class="quote-bank-col">
+                                <div class="quote-bank-row"><span class="qb-label">Name of the bank:</span> <span class="qb-value">Adib</span></div>
+                                <div class="quote-bank-row"><span class="qb-label">Account name:</span> <span class="qb-value">PYRAMEDIAX AI DEVELOPING SERVICES</span></div>
+                                <div class="quote-bank-row"><span class="qb-label">Account Type:</span> <span class="qb-value">AED - Business Connect Current Acc</span></div>
+                            </div>
+                            <div class="quote-bank-col">
+                                <div class="quote-bank-row"><span class="qb-label">Account Class:</span> <span class="qb-value">CURRENT ACCOUNT</span></div>
+                                <div class="quote-bank-row"><span class="qb-label">Account No:</span> <span class="qb-value">19593331</span></div>
+                                <div class="quote-bank-row"><span class="qb-label">IBAN:</span> <span class="qb-value">AE950500000000019593331</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ═══ TERMS & CONDITIONS (FIXED) ═══ -->
+                    <div class="quote-terms-section">
+                        <h3 class="quote-terms-title">TERMS & CONDITIONS</h3>
+                        <div class="quote-terms-grid">
+                            <div class="quote-terms-col">
+                                <h4>Payment</h4>
+                                <p>Projects below AED 5,000 require 100% advance payment. Projects above AED 5,000 require 50% advance payment, with the balance payable upon final delivery before release of assets.</p>
+                                <h4>Scope & Revisions</h4>
+                                <p>This quotation is based on the agreed scope. Any changes outside scope will be charged additionally. Includes up to 2 revision rounds unless stated otherwise.</p>
+                                <h4>Validity</h4>
+                                <p>This quotation is valid for 7 days from the issue date.</p>
+                                <h4>Delivery</h4>
+                                <p>Timelines start after advance payment and final brief approval. Client delays may affect delivery schedules.</p>
+                            </div>
+                            <div class="quote-terms-col">
+                                <h4>Cancellation</h4>
+                                <p>Cancellation within 24 hours: 100% charge. Cancellation within 48 hours: 75% charge. Completed work is fully chargeable.</p>
+                                <h4>Overtime</h4>
+                                <p>Overtime is charged at AED 500/hour unless agreed otherwise.</p>
+                                <h4>Intellectual Property</h4>
+                                <p>All materials remain the service provider's property until full payment. Usage rights are granted upon full payment for the agreed purpose only.</p>
+                            </div>
+                            <div class="quote-terms-col">
+                                <h4>Liability</h4>
+                                <p>Liability is limited to the total value of this quotation.</p>
+                                <h4>Governing Law</h4>
+                                <p>UAE law applies. Jurisdiction: DIFC Courts.</p>
+                                <h4>Acceptance</h4>
+                                <p>Advance payment or written confirmation confirms full acceptance of these terms.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ═══ FOOTER (FIXED) ═══ -->
+                    <div class="quote-footer">
+                        <div class="quote-footer-left">
+                            <span><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" width="14" height="14"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg> +971 565799505</span>
+                            <span>@pyramedia.dxb</span>
+                        </div>
+                        <div class="quote-footer-right">
+                            <span>WWW.PYRAMEDIA.INFO</span> - <span>WWW.PYRAMEDIA.AI</span>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+
+        document.body.appendChild(overlay);
+
+        // Store current quote data for saving
+        this._currentQuoteId = isEdit ? quote.id : null;
+        this._currentQuoteNumber = isEdit ? quote.quote_number : null;
+        this._currentQuoteStatus = isEdit ? quote.status : 'draft';
+
+        // Initial calc
+        this._recalcQuote();
+    },
+
+    _quoteItemRow(index, item) {
+        return `<tr class="quote-item-row">
+            <td><input type="text" class="quote-input qi-desc" value="${this.escAttr(item.description || '')}" placeholder="Service description..." oninput="App._recalcQuote()"></td>
+            <td><input type="number" class="quote-input qi-qty" value="${item.quantity || 1}" min="0" step="1" oninput="App._recalcQuote()"></td>
+            <td><input type="number" class="quote-input qi-rate" value="${item.rate || 0}" min="0" step="0.01" oninput="App._recalcQuote()"></td>
+            <td><span class="qi-amount">${parseFloat(item.amount || 0).toFixed(2)}</span></td>
+            <td><button class="btn btn-sm btn-ghost qi-remove" onclick="App._removeQuoteItem(this)" title="Remove" style="color:#ef4444">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button></td>
+        </tr>`;
+    },
+
+    _addQuoteItem() {
+        const tbody = document.getElementById('quoteItemsBody');
+        if (!tbody) return;
+        const index = tbody.querySelectorAll('.quote-item-row').length;
+        tbody.insertAdjacentHTML('beforeend', this._quoteItemRow(index, {}));
+    },
+
+    _removeQuoteItem(btn) {
+        const row = btn.closest('.quote-item-row');
+        if (row) {
+            const tbody = document.getElementById('quoteItemsBody');
+            if (tbody && tbody.querySelectorAll('.quote-item-row').length > 1) {
+                row.remove();
+                this._recalcQuote();
+            } else {
+                this.toast('At least one item is required', 'warning');
+            }
+        }
+    },
+
+    _recalcQuote() {
+        const rows = document.querySelectorAll('.quote-item-row');
+        let subtotal = 0;
+        rows.forEach(row => {
+            const qty = parseFloat(row.querySelector('.qi-qty')?.value || 0);
+            const rate = parseFloat(row.querySelector('.qi-rate')?.value || 0);
+            const amount = qty * rate;
+            const amountEl = row.querySelector('.qi-amount');
+            if (amountEl) amountEl.textContent = amount.toFixed(2);
+            subtotal += amount;
+        });
+
+        const taxRate = parseFloat(document.getElementById('qTaxRate')?.value || 0);
+        const taxAmount = subtotal * (taxRate / 100);
+        const total = subtotal + taxAmount;
+
+        const subEl = document.getElementById('qSubtotal');
+        const taxEl = document.getElementById('qTaxAmount');
+        const totalEl = document.getElementById('qTotal');
+        const taxRateDisp = document.getElementById('qTaxRateDisplay');
+        const currDisp = document.getElementById('qCurrencyDisplay');
+
+        if (subEl) subEl.textContent = subtotal.toFixed(2);
+        if (taxEl) taxEl.textContent = taxAmount.toFixed(2);
+        if (totalEl) totalEl.textContent = total.toFixed(2);
+        if (taxRateDisp) taxRateDisp.textContent = taxRate;
+        if (currDisp) currDisp.textContent = document.getElementById('qCurrency')?.value || 'AED';
+    },
+
+    _selectQuoteClient(clientId) {
+        const client = this._quoteClients.find(c => c.id === clientId);
+        if (!client) return;
+        document.getElementById('qClientName').value = client.name || '';
+        document.getElementById('qClientEmail').value = client.email || '';
+        document.getElementById('qClientCompany').value = client.company || '';
+        document.getElementById('qClientPhone').value = client.phone || '';
+        document.getElementById('qClientAddress').value = client.address || '';
+    },
+
+    async saveQuote(sendAfterSave = false) {
+        // Collect items
+        const itemRows = document.querySelectorAll('.quote-item-row');
+        const items = [];
+        itemRows.forEach((row, i) => {
+            const desc = row.querySelector('.qi-desc')?.value?.trim() || '';
+            const qty = parseFloat(row.querySelector('.qi-qty')?.value || 0);
+            const rate = parseFloat(row.querySelector('.qi-rate')?.value || 0);
+            if (desc) {
+                items.push({ description: desc, quantity: qty, rate: rate, amount: qty * rate });
+            }
+        });
+
+        if (items.length === 0) {
+            this.toast('Add at least one item with a description', 'warning');
+            return;
+        }
+
+        // Fixed terms (hardcoded)
+        const terms = [
+            { title: 'Payment', content: 'Projects below AED 5,000 require 100% advance payment. Projects above AED 5,000 require 50% advance payment, with the balance payable upon final delivery before release of assets.' },
+            { title: 'Scope & Revisions', content: 'This quotation is based on the agreed scope. Any changes outside scope will be charged additionally. Includes up to 2 revision rounds unless stated otherwise.' },
+            { title: 'Validity', content: 'This quotation is valid for 7 days from the issue date.' },
+            { title: 'Delivery', content: 'Timelines start after advance payment and final brief approval. Client delays may affect delivery schedules.' },
+            { title: 'Cancellation', content: 'Cancellation within 24 hours: 100% charge. Cancellation within 48 hours: 75% charge. Completed work is fully chargeable.' },
+            { title: 'Overtime', content: 'Overtime is charged at AED 500/hour unless agreed otherwise.' },
+            { title: 'Intellectual Property', content: 'All materials remain the service provider\'s property until full payment. Usage rights are granted upon full payment for the agreed purpose only.' },
+            { title: 'Liability', content: 'Liability is limited to the total value of this quotation.' },
+            { title: 'Governing Law', content: 'UAE law applies. Jurisdiction: DIFC Courts.' },
+            { title: 'Acceptance', content: 'Advance payment or written confirmation confirms full acceptance of these terms.' }
+        ];
+
+        // Collect totals
+        const subtotal = parseFloat(document.getElementById('qSubtotal')?.textContent || 0);
+        const taxRate = parseFloat(document.getElementById('qTaxRate')?.value || 0);
+        const taxAmount = parseFloat(document.getElementById('qTaxAmount')?.textContent || 0);
+        const total = parseFloat(document.getElementById('qTotal')?.textContent || 0);
+
+        // Fixed bank details
+        const bankDetails = {
+            bank_name: 'Adib',
+            account_name: 'PYRAMEDIAX AI DEVELOPING SERVICES',
+            account_type: 'AED - Business Connect Current Acc',
+            account_class: 'CURRENT ACCOUNT',
+            account_number: '19593331',
+            iban: 'AE950500000000019593331'
+        };
+
+        const payload = {
+            sub_action: this._currentQuoteId ? 'update' : 'create',
+            quote_id: this._currentQuoteId || undefined,
+            quote_number: this._currentQuoteNumber || undefined,
+            client_id: document.getElementById('qClientSelect')?.value || null,
+            project_name: document.getElementById('qProject')?.value?.trim() || '',
+            status: this._currentQuoteStatus || 'draft',
+            estimate_date: document.getElementById('qDate')?.value || new Date().toISOString().split('T')[0],
+            expiry_date: document.getElementById('qExpiry')?.value || null,
+            currency: document.getElementById('qCurrency')?.value || 'AED',
+            subtotal, tax_rate: taxRate, tax_amount: taxAmount, total,
+            notes: document.getElementById('qNotes')?.value?.trim() || '',
+            terms_conditions: terms,
+            bank_details: bankDetails,
+            company_name: 'PYRAMEDIA X',
+            client_name: document.getElementById('qClientName')?.value?.trim() || '',
+            client_email: document.getElementById('qClientEmail')?.value?.trim() || '',
+            client_company: document.getElementById('qClientCompany')?.value?.trim() || '',
+            client_phone: document.getElementById('qClientPhone')?.value?.trim() || '',
+            client_address: document.getElementById('qClientAddress')?.value?.trim() || '',
+            items
+        };
+
+        try {
+            const res = await this.apiFetch('api/api.php?action=manage_quotes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.success) {
+                this._currentQuoteId = data.quote_id || data.quote?.id;
+                this._currentQuoteNumber = data.quote?.quote_number || this._currentQuoteNumber;
+
+                if (sendAfterSave) {
+                    const sendRes = await this.apiFetch('api/api.php?action=manage_quotes', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sub_action: 'send', quote_id: this._currentQuoteId })
+                    });
+                    const sendData = await sendRes.json();
+                    if (sendData.success) {
+                        this.toast('Quote saved and sent successfully!', 'success');
+                        this.closeQuoteBuilder();
+                        this.showQuotesPanel();
+                    } else {
+                        this.toast('Saved but failed to send: ' + (sendData.error || ''), 'error');
+                    }
+                } else {
+                    this.toast('Quote saved successfully!', 'success');
+                }
+            } else {
+                this.toast(data.error || 'Failed to save quote', 'error');
+            }
+        } catch (e) {
+            this.toast('Error: ' + e.message, 'error');
+        }
+    },
+
+    closeQuoteBuilder() {
+        const overlay = document.getElementById('quoteBuilderOverlay');
+        if (overlay) overlay.remove();
+        this._currentQuoteId = null;
+        this._currentQuoteNumber = null;
+        this._currentQuoteStatus = null;
+    },
+
+    async deleteQuote(id) {
+        if (!confirm('Are you sure you want to delete this quote?')) return;
+        try {
+            const res = await this.apiFetch('api/api.php?action=manage_quotes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sub_action: 'delete', quote_id: id })
+            });
+            const data = await res.json();
+            if (data.success) {
+                this.toast('Quote deleted', 'success');
+                this.showQuotesPanel();
+            } else {
+                this.toast(data.error || 'Failed to delete', 'error');
+            }
+        } catch (e) { this.toast('Error: ' + e.message, 'error'); }
+    },
+
+    async duplicateQuote(id) {
+        try {
+            const res = await this.apiFetch('api/api.php?action=manage_quotes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sub_action: 'duplicate', quote_id: id })
+            });
+            const data = await res.json();
+            if (data.success) {
+                this.toast('Quote duplicated: ' + data.quote_number, 'success');
+                this.showQuoteBuilder(data.quote_id);
+            } else {
+                this.toast(data.error || 'Failed to duplicate', 'error');
+            }
+        } catch (e) { this.toast('Error: ' + e.message, 'error'); }
+    },
+
+    async generateQuotePDF() {
+        const el = document.getElementById('quotePageContent');
+        if (!el) { this.toast('Quote page not found', 'error'); return; }
+        if (typeof html2canvas === 'undefined' || typeof jspdf === 'undefined') {
+            this.toast('PDF libraries still loading, try again in a moment', 'warning');
+            return;
+        }
+        this.toast('Generating PDF...', 'info');
+        try {
+            const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
+            const imgData = canvas.toDataURL('image/png');
+            const { jsPDF } = jspdf;
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+            let position = 0;
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            if (pdfHeight <= pageHeight) {
+                pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            } else {
+                while (position < pdfHeight) {
+                    pdf.addImage(imgData, 'PNG', 0, -position, pdfWidth, pdfHeight);
+                    position += pageHeight;
+                    if (position < pdfHeight) pdf.addPage();
+                }
+            }
+
+            const num = this._currentQuoteNumber || 'quote';
+            pdf.save(num + '.pdf');
+            this.toast('PDF downloaded!', 'success');
+        } catch (e) {
+            this.toast('PDF generation failed: ' + e.message, 'error');
+        }
     }
 };
 

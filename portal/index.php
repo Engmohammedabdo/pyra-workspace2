@@ -968,6 +968,119 @@ if ($action) {
         echo json_encode(getPublicSettings());
         break;
 
+    // ============================================
+    // QUOTATION SYSTEM (Client Portal)
+    // ============================================
+
+    case 'client_quotes':
+        if (!$client) {
+            echo json_encode(['success' => false, 'error' => 'يجب تسجيل الدخول']);
+            break;
+        }
+        $clientId = $_SESSION['client_id'];
+        $endpoint = '/pyra_quotes?client_id=eq.' . rawurlencode($clientId)
+            . '&status=neq.draft'
+            . '&select=id,quote_number,project_name,status,currency,total,estimate_date,expiry_date,sent_at,signed_at,created_at'
+            . '&order=created_at.desc';
+
+        $statusFilter = $_GET['status'] ?? '';
+        if ($statusFilter && in_array($statusFilter, ['sent','viewed','signed','expired','cancelled'])) {
+            $endpoint = '/pyra_quotes?client_id=eq.' . rawurlencode($clientId)
+                . '&status=eq.' . $statusFilter
+                . '&select=id,quote_number,project_name,status,currency,total,estimate_date,expiry_date,sent_at,signed_at,created_at'
+                . '&order=created_at.desc';
+        }
+
+        $result = dbRequest('GET', $endpoint);
+        echo json_encode(['success' => true, 'quotes' => $result['data'] ?? []]);
+        break;
+
+    case 'client_quote_detail':
+        if (!$client) {
+            echo json_encode(['success' => false, 'error' => 'يجب تسجيل الدخول']);
+            break;
+        }
+        $quoteId = $_GET['id'] ?? '';
+        if (!$quoteId) {
+            echo json_encode(['success' => false, 'error' => 'معرّف العرض مطلوب']);
+            break;
+        }
+        $clientId = $_SESSION['client_id'];
+        $quote = dbRequest('GET', '/pyra_quotes?id=eq.' . rawurlencode($quoteId) . '&client_id=eq.' . rawurlencode($clientId));
+        if (empty($quote['data'])) {
+            echo json_encode(['success' => false, 'error' => 'العرض غير موجود']);
+            break;
+        }
+        $q = $quote['data'][0];
+
+        // Auto-mark as viewed if status is 'sent'
+        if ($q['status'] === 'sent') {
+            dbRequest('PATCH', '/pyra_quotes?id=eq.' . rawurlencode($quoteId), [
+                'status' => 'viewed',
+                'viewed_at' => date('c'),
+                'updated_at' => date('c')
+            ]);
+            $q['status'] = 'viewed';
+            $q['viewed_at'] = date('c');
+        }
+
+        $items = dbRequest('GET', '/pyra_quote_items?quote_id=eq.' . rawurlencode($quoteId) . '&order=sort_order.asc');
+        echo json_encode([
+            'success' => true,
+            'quote' => $q,
+            'items' => $items['data'] ?? []
+        ]);
+        break;
+
+    case 'client_sign_quote':
+        if (!$client) {
+            echo json_encode(['success' => false, 'error' => 'يجب تسجيل الدخول']);
+            break;
+        }
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            echo json_encode(['success' => false, 'error' => 'Method not allowed']);
+            break;
+        }
+        $input = json_decode(file_get_contents('php://input'), true);
+        $quoteId = trim($input['quote_id'] ?? '');
+        $signatureData = $input['signature_data'] ?? '';
+        $signedBy = trim($input['signed_by'] ?? '');
+
+        if (!$quoteId || !$signatureData || !$signedBy) {
+            echo json_encode(['success' => false, 'error' => 'بيانات التوقيع ناقصة']);
+            break;
+        }
+
+        $clientId = $_SESSION['client_id'];
+        // Verify quote belongs to this client and is signable
+        $quoteCheck = dbRequest('GET', '/pyra_quotes?id=eq.' . rawurlencode($quoteId) . '&client_id=eq.' . rawurlencode($clientId) . '&select=id,status');
+        if (empty($quoteCheck['data'])) {
+            echo json_encode(['success' => false, 'error' => 'العرض غير موجود']);
+            break;
+        }
+        $qStatus = $quoteCheck['data'][0]['status'];
+        if (!in_array($qStatus, ['sent', 'viewed'])) {
+            echo json_encode(['success' => false, 'error' => 'لا يمكن التوقيع على هذا العرض - الحالة: ' . $qStatus]);
+            break;
+        }
+
+        // Save signature
+        $result = dbRequest('PATCH', '/pyra_quotes?id=eq.' . rawurlencode($quoteId), [
+            'signature_data' => $signatureData,
+            'signed_by' => $signedBy,
+            'signed_at' => date('c'),
+            'signed_ip' => $_SERVER['REMOTE_ADDR'] ?? '',
+            'status' => 'signed',
+            'updated_at' => date('c')
+        ]);
+
+        if ($result['httpCode'] === 200 || $result['httpCode'] === 204) {
+            echo json_encode(['success' => true, 'message' => 'تم التوقيع بنجاح']);
+        } else {
+            echo json_encode(['success' => false, 'error' => 'فشل في حفظ التوقيع']);
+        }
+        break;
+
     default:
         http_response_code(400);
         echo json_encode(['error' => 'عملية غير معروفة']);
@@ -1000,6 +1113,9 @@ $logoUrl = $publicSettings['app_logo_url'] ?? '';
     <style>:root { --accent: <?= $accentColor ?>; }</style>
     <?php endif; ?>
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+    <!-- html2canvas + jsPDF — PDF generation for quotes -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 </head>
 <body class="portal-body" data-theme="pyramedia">
 
@@ -1156,6 +1272,10 @@ $logoUrl = $publicSettings['app_logo_url'] ?? '';
                 <button class="portal-nav-btn" data-screen="projects" onclick="PortalApp.showScreen('projects')">
                     <i data-lucide="folder-open"></i>
                     <span>المشاريع</span>
+                </button>
+                <button class="portal-nav-btn" data-screen="quotes" onclick="PortalApp.showScreen('quotes')">
+                    <i data-lucide="file-text"></i>
+                    <span>عروض الأسعار</span>
                 </button>
                 <button class="portal-nav-btn" data-screen="notifications" onclick="PortalApp.showScreen('notifications')">
                     <i data-lucide="bell"></i>

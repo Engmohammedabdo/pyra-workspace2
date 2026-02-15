@@ -2341,6 +2341,277 @@ switch ($action) {
         echo json_encode(['success' => true, 'comments' => $threaded]);
         break;
 
+    // ============================================
+    // QUOTATION SYSTEM (Admin only)
+    // ============================================
+
+    case 'manage_quotes':
+        if (!isAdmin()) {
+            echo json_encode(['success' => false, 'error' => 'Admin access required']);
+            break;
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+            $endpoint = '/pyra_quotes?select=id,quote_number,client_id,client_name,client_company,project_name,status,currency,total,estimate_date,expiry_date,sent_at,signed_at,created_at&order=created_at.desc';
+
+            $status = $_GET['status'] ?? '';
+            if ($status && in_array($status, ['draft','sent','viewed','signed','expired','cancelled'])) {
+                $endpoint .= '&status=eq.' . $status;
+            }
+            $clientId = $_GET['client_id'] ?? '';
+            if ($clientId) {
+                $endpoint .= '&client_id=eq.' . rawurlencode($clientId);
+            }
+
+            $result = dbRequest('GET', $endpoint);
+            echo json_encode(['success' => true, 'quotes' => $result['data'] ?? []]);
+            break;
+        }
+
+        $input = $jsonBody;
+        $sub = $input['sub_action'] ?? '';
+
+        switch ($sub) {
+            case 'create':
+            case 'update':
+                $isUpdate = ($sub === 'update');
+                $quoteId = $isUpdate ? trim($input['quote_id'] ?? '') : generateQuoteId();
+
+                if ($isUpdate && !$quoteId) {
+                    echo json_encode(['success' => false, 'error' => 'معرّف العرض مطلوب']);
+                    break;
+                }
+
+                $quoteNumber = $isUpdate ? ($input['quote_number'] ?? '') : generateNextQuoteNumber();
+
+                $quoteData = [
+                    'id' => $quoteId,
+                    'quote_number' => $quoteNumber,
+                    'client_id' => $input['client_id'] ?? null,
+                    'project_name' => trim($input['project_name'] ?? ''),
+                    'status' => $input['status'] ?? 'draft',
+                    'estimate_date' => $input['estimate_date'] ?? date('Y-m-d'),
+                    'expiry_date' => $input['expiry_date'] ?? null,
+                    'currency' => $input['currency'] ?? 'AED',
+                    'subtotal' => (float)($input['subtotal'] ?? 0),
+                    'tax_rate' => (float)($input['tax_rate'] ?? 5),
+                    'tax_amount' => (float)($input['tax_amount'] ?? 0),
+                    'total' => (float)($input['total'] ?? 0),
+                    'notes' => trim($input['notes'] ?? ''),
+                    'terms_conditions' => json_encode($input['terms_conditions'] ?? []),
+                    'bank_details' => json_encode($input['bank_details'] ?? new \stdClass()),
+                    'company_name' => trim($input['company_name'] ?? ''),
+                    'company_logo' => trim($input['company_logo'] ?? ''),
+                    'client_name' => trim($input['client_name'] ?? ''),
+                    'client_email' => trim($input['client_email'] ?? ''),
+                    'client_company' => trim($input['client_company'] ?? ''),
+                    'client_phone' => trim($input['client_phone'] ?? ''),
+                    'client_address' => trim($input['client_address'] ?? ''),
+                    'updated_at' => date('c')
+                ];
+
+                if (!$isUpdate) {
+                    $quoteData['created_by'] = $_SESSION['user'] ?? 'admin';
+                    $quoteData['created_at'] = date('c');
+                    $result = dbRequest('POST', '/pyra_quotes', $quoteData, ['Prefer: return=representation']);
+                } else {
+                    unset($quoteData['id'], $quoteData['quote_number']);
+                    $result = dbRequest('PATCH', '/pyra_quotes?id=eq.' . rawurlencode($quoteId), $quoteData, ['Prefer: return=representation']);
+                }
+
+                if ($result['httpCode'] === 201 || $result['httpCode'] === 200) {
+                    // Handle items: delete old then insert new
+                    if ($isUpdate) {
+                        dbRequest('DELETE', '/pyra_quote_items?quote_id=eq.' . rawurlencode($quoteId));
+                    }
+
+                    $items = $input['items'] ?? [];
+                    if (!empty($items)) {
+                        $itemRows = [];
+                        foreach ($items as $i => $item) {
+                            $itemRows[] = [
+                                'id' => generateQuoteItemId(),
+                                'quote_id' => $isUpdate ? $quoteId : ($result['data'][0]['id'] ?? $quoteId),
+                                'sort_order' => $i,
+                                'description' => trim($item['description'] ?? ''),
+                                'quantity' => (float)($item['quantity'] ?? 1),
+                                'rate' => (float)($item['rate'] ?? 0),
+                                'amount' => (float)($item['amount'] ?? 0)
+                            ];
+                        }
+                        dbRequest('POST', '/pyra_quote_items', $itemRows);
+                    }
+
+                    logActivity($isUpdate ? 'update_quote' : 'create_quote', '', [
+                        'quote_number' => $isUpdate ? ($input['quote_number'] ?? '') : $quoteNumber,
+                        'client' => $input['client_name'] ?? ''
+                    ]);
+
+                    echo json_encode([
+                        'success' => true,
+                        'quote' => $result['data'][0] ?? $quoteData,
+                        'quote_id' => $isUpdate ? $quoteId : ($result['data'][0]['id'] ?? $quoteId)
+                    ]);
+                } else {
+                    echo json_encode(['success' => false, 'error' => $result['data']['message'] ?? 'فشل في حفظ العرض']);
+                }
+                break;
+
+            case 'delete':
+                $quoteId = trim($input['quote_id'] ?? '');
+                if (!$quoteId) {
+                    echo json_encode(['success' => false, 'error' => 'معرّف العرض مطلوب']);
+                    break;
+                }
+                // Items cascade-delete via FK
+                $result = dbRequest('DELETE', '/pyra_quotes?id=eq.' . rawurlencode($quoteId));
+                logActivity('delete_quote', '', ['quote_id' => $quoteId]);
+                echo json_encode(['success' => true]);
+                break;
+
+            case 'duplicate':
+                $quoteId = trim($input['quote_id'] ?? '');
+                if (!$quoteId) {
+                    echo json_encode(['success' => false, 'error' => 'معرّف العرض مطلوب']);
+                    break;
+                }
+                // Fetch original
+                $orig = dbRequest('GET', '/pyra_quotes?id=eq.' . rawurlencode($quoteId));
+                if (empty($orig['data'])) {
+                    echo json_encode(['success' => false, 'error' => 'العرض غير موجود']);
+                    break;
+                }
+                $o = $orig['data'][0];
+                $newId = generateQuoteId();
+                $newNumber = generateNextQuoteNumber();
+
+                $newQuote = [
+                    'id' => $newId,
+                    'quote_number' => $newNumber,
+                    'client_id' => $o['client_id'],
+                    'project_name' => $o['project_name'],
+                    'status' => 'draft',
+                    'estimate_date' => date('Y-m-d'),
+                    'expiry_date' => null,
+                    'currency' => $o['currency'],
+                    'subtotal' => $o['subtotal'],
+                    'tax_rate' => $o['tax_rate'],
+                    'tax_amount' => $o['tax_amount'],
+                    'total' => $o['total'],
+                    'notes' => $o['notes'],
+                    'terms_conditions' => $o['terms_conditions'],
+                    'bank_details' => $o['bank_details'],
+                    'company_name' => $o['company_name'],
+                    'company_logo' => $o['company_logo'],
+                    'client_name' => $o['client_name'],
+                    'client_email' => $o['client_email'],
+                    'client_company' => $o['client_company'],
+                    'client_phone' => $o['client_phone'],
+                    'client_address' => $o['client_address'],
+                    'created_by' => $_SESSION['user'] ?? 'admin',
+                    'created_at' => date('c'),
+                    'updated_at' => date('c')
+                ];
+
+                $result = dbRequest('POST', '/pyra_quotes', $newQuote, ['Prefer: return=representation']);
+                if ($result['httpCode'] === 201) {
+                    // Copy items
+                    $itemsRes = dbRequest('GET', '/pyra_quote_items?quote_id=eq.' . rawurlencode($quoteId) . '&order=sort_order.asc');
+                    if (!empty($itemsRes['data'])) {
+                        $newItems = [];
+                        foreach ($itemsRes['data'] as $item) {
+                            $newItems[] = [
+                                'id' => generateQuoteItemId(),
+                                'quote_id' => $newId,
+                                'sort_order' => $item['sort_order'],
+                                'description' => $item['description'],
+                                'quantity' => $item['quantity'],
+                                'rate' => $item['rate'],
+                                'amount' => $item['amount']
+                            ];
+                        }
+                        dbRequest('POST', '/pyra_quote_items', $newItems);
+                    }
+                    echo json_encode(['success' => true, 'quote_id' => $newId, 'quote_number' => $newNumber]);
+                } else {
+                    echo json_encode(['success' => false, 'error' => 'فشل في تكرار العرض']);
+                }
+                break;
+
+            case 'send':
+                $quoteId = trim($input['quote_id'] ?? '');
+                if (!$quoteId) {
+                    echo json_encode(['success' => false, 'error' => 'معرّف العرض مطلوب']);
+                    break;
+                }
+                // Fetch quote to get client info
+                $quoteRes = dbRequest('GET', '/pyra_quotes?id=eq.' . rawurlencode($quoteId) . '&select=id,client_id,client_name,quote_number,project_name');
+                if (empty($quoteRes['data'])) {
+                    echo json_encode(['success' => false, 'error' => 'العرض غير موجود']);
+                    break;
+                }
+                $q = $quoteRes['data'][0];
+
+                // Update status
+                dbRequest('PATCH', '/pyra_quotes?id=eq.' . rawurlencode($quoteId), [
+                    'status' => 'sent',
+                    'sent_at' => date('c'),
+                    'updated_at' => date('c')
+                ]);
+
+                // Create client notification
+                if ($q['client_id']) {
+                    dbRequest('POST', '/pyra_client_notifications', [
+                        'id' => generatePortalId('cn'),
+                        'client_id' => $q['client_id'],
+                        'type' => 'file_shared',
+                        'title' => 'عرض سعر جديد',
+                        'message' => 'تم إرسال عرض سعر جديد: ' . ($q['quote_number'] ?? '') . ' - ' . ($q['project_name'] ?? '')
+                    ]);
+                }
+
+                logActivity('send_quote', '', ['quote_number' => $q['quote_number'], 'client' => $q['client_name']]);
+                echo json_encode(['success' => true]);
+                break;
+
+            default:
+                echo json_encode(['success' => false, 'error' => 'Sub action required']);
+        }
+        break;
+
+    case 'get_quote_detail':
+        if (!isAdmin()) {
+            echo json_encode(['success' => false, 'error' => 'Admin access required']);
+            break;
+        }
+        $quoteId = $_GET['id'] ?? '';
+        if (!$quoteId) {
+            echo json_encode(['success' => false, 'error' => 'معرّف العرض مطلوب']);
+            break;
+        }
+        $quote = dbRequest('GET', '/pyra_quotes?id=eq.' . rawurlencode($quoteId));
+        if (empty($quote['data'])) {
+            echo json_encode(['success' => false, 'error' => 'العرض غير موجود']);
+            break;
+        }
+        $items = dbRequest('GET', '/pyra_quote_items?quote_id=eq.' . rawurlencode($quoteId) . '&order=sort_order.asc');
+        echo json_encode([
+            'success' => true,
+            'quote' => $quote['data'][0],
+            'items' => $items['data'] ?? []
+        ]);
+        break;
+
+    case 'get_clients_list':
+        // Simple client list for quote builder dropdown
+        if (!isAdmin()) {
+            echo json_encode(['success' => false, 'error' => 'Admin access required']);
+            break;
+        }
+        $result = dbRequest('GET', '/pyra_clients?select=id,name,email,company,phone&status=eq.active&order=name.asc');
+        echo json_encode(['success' => true, 'clients' => $result['data'] ?? []]);
+        break;
+
     default:
         echo json_encode(['error' => 'Invalid action']);
         break;

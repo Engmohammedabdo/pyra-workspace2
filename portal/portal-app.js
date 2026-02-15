@@ -189,6 +189,8 @@ const PortalApp = {
         if (screen === 'projects' && parts[1]) params.page = parseInt(parts[1]) || 1;
         if (screen === 'project_detail' && parts[1]) params.projectId = parts[1];
         if (screen === 'file_preview' && parts[1]) params.fileId = parts[1];
+        if (screen === 'quotes' && parts[1]) params.page = parseInt(parts[1]) || 1;
+        if (screen === 'quote_detail' && parts[1]) params.quoteId = parts[1];
 
         return { screen, params };
     },
@@ -200,6 +202,8 @@ const PortalApp = {
             case 'project_detail': return `#project_detail/${params.projectId || ''}`;
             case 'file_preview': return `#file_preview/${params.fileId || ''}`;
             case 'notifications': return '#notifications';
+            case 'quotes': return params.page > 1 ? `#quotes/${params.page}` : '#quotes';
+            case 'quote_detail': return `#quote_detail/${params.quoteId || ''}`;
             case 'profile': return '#profile';
             default: return '#dashboard';
         }
@@ -211,7 +215,7 @@ const PortalApp = {
         this.currentScreen = screen;
 
         // Update active nav
-        const navScreen = ['project_detail', 'file_preview'].includes(screen) ? 'projects' : screen;
+        const navScreen = ['project_detail', 'file_preview'].includes(screen) ? 'projects' : (screen === 'quote_detail' ? 'quotes' : screen);
         document.querySelectorAll('.portal-nav-btn').forEach(btn => {
             btn.classList.toggle('portal-nav-active', btn.dataset.screen === navScreen);
         });
@@ -246,6 +250,12 @@ const PortalApp = {
                 break;
             case 'notifications':
                 this.renderNotifications();
+                break;
+            case 'quotes':
+                this.renderQuotes(params.page || 1, params.status);
+                break;
+            case 'quote_detail':
+                this.renderQuoteDetail(params.quoteId);
                 break;
             case 'profile':
                 this.renderProfile();
@@ -2092,6 +2102,492 @@ const PortalApp = {
             return this.formatDate(dateStr);
         } catch {
             return dateStr;
+        }
+    },
+
+    // ═══════════════════════════════════════════════════════════════
+    // QUOTATION SYSTEM (Client Portal)
+    // ═══════════════════════════════════════════════════════════════
+
+    _signatureCanvas: null,
+
+    async renderQuotes(page = 1, statusFilter = '') {
+        const main = document.getElementById('portalMain');
+        if (!main) return;
+
+        // Show loading skeleton
+        main.innerHTML = `
+            <div class="portal-quotes-page">
+                <div class="portal-page-header">
+                    <h1 class="portal-page-title">عروض الأسعار</h1>
+                </div>
+                <div class="portal-quotes-loading">
+                    <div class="portal-skeleton-card" style="height:80px;margin-bottom:12px"></div>
+                    <div class="portal-skeleton-card" style="height:80px;margin-bottom:12px"></div>
+                    <div class="portal-skeleton-card" style="height:80px;margin-bottom:12px"></div>
+                </div>
+            </div>`;
+
+        try {
+            let url = '?action=client_quotes';
+            if (statusFilter) url += '&status=' + encodeURIComponent(statusFilter);
+            const res = await this.apiFetch(url);
+            const data = await res.json();
+
+            if (!data.success) {
+                main.innerHTML = `<div class="portal-error-state"><p>${this.escHtml(data.error || 'فشل في تحميل عروض الأسعار')}</p></div>`;
+                return;
+            }
+
+            const quotes = data.quotes || [];
+            const statusLabels = {
+                sent: { label: 'جديد', cls: 'sent' },
+                viewed: { label: 'تم الاطلاع', cls: 'viewed' },
+                signed: { label: 'موقّع', cls: 'signed' },
+                expired: { label: 'منتهي', cls: 'expired' },
+                cancelled: { label: 'ملغي', cls: 'cancelled' }
+            };
+
+            // Filter tabs
+            const filters = ['', 'sent', 'viewed', 'signed'];
+            const filterHtml = filters.map(f => {
+                const label = f === '' ? 'الكل' : (statusLabels[f]?.label || f);
+                const count = f === '' ? quotes.length : quotes.filter(q => q.status === f).length;
+                const active = (statusFilter || '') === f ? 'active' : '';
+                return `<button class="portal-quote-filter-btn ${active}" onclick="PortalApp.showScreen('quotes', {status: '${f}'})">${label} (${count})</button>`;
+            }).join('');
+
+            const displayed = statusFilter ? quotes.filter(q => q.status === statusFilter) : quotes;
+
+            let cardsHtml = '';
+            if (displayed.length === 0) {
+                cardsHtml = `<div class="portal-empty-state">
+                    <i data-lucide="file-text" style="width:48px;height:48px;stroke-width:1.5"></i>
+                    <p>لا توجد عروض أسعار</p>
+                </div>`;
+            } else {
+                displayed.forEach((q, idx) => {
+                    const s = statusLabels[q.status] || { label: q.status, cls: 'sent' };
+                    const total = parseFloat(q.total || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
+                    const date = q.estimate_date ? new Date(q.estimate_date).toLocaleDateString('ar-SA') : '—';
+                    cardsHtml += `
+                        <div class="portal-quote-card" style="animation-delay:${idx * 0.06}s" onclick="PortalApp.showScreen('quote_detail', {quoteId: '${this.escAttr(q.id)}'})">
+                            <div class="portal-quote-card-top">
+                                <div class="portal-quote-card-number">${this.escHtml(q.quote_number)}</div>
+                                <span class="portal-quote-status ${s.cls}">${s.label}</span>
+                            </div>
+                            <div class="portal-quote-card-project">${this.escHtml(q.project_name || 'بدون عنوان')}</div>
+                            <div class="portal-quote-card-bottom">
+                                <span class="portal-quote-card-date">${date}</span>
+                                <span class="portal-quote-card-total">${total} ${this.escHtml(q.currency || 'AED')}</span>
+                            </div>
+                        </div>`;
+                });
+            }
+
+            main.innerHTML = `
+                <div class="portal-quotes-page">
+                    <div class="portal-page-header">
+                        <h1 class="portal-page-title">عروض الأسعار</h1>
+                    </div>
+                    <div class="portal-quote-filters">${filterHtml}</div>
+                    <div class="portal-quotes-grid">${cardsHtml}</div>
+                </div>`;
+
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        } catch (e) {
+            main.innerHTML = `<div class="portal-error-state"><p>خطأ: ${this.escHtml(e.message)}</p></div>`;
+        }
+    },
+
+    async renderQuoteDetail(quoteId) {
+        const main = document.getElementById('portalMain');
+        if (!main || !quoteId) return;
+
+        main.innerHTML = `
+            <div class="portal-quote-detail-page">
+                <div class="portal-skeleton-card" style="height:600px"></div>
+            </div>`;
+
+        try {
+            const res = await this.apiFetch('?action=client_quote_detail&id=' + encodeURIComponent(quoteId));
+            const data = await res.json();
+
+            if (!data.success) {
+                main.innerHTML = `<div class="portal-error-state">
+                    <p>${this.escHtml(data.error || 'فشل في تحميل العرض')}</p>
+                    <button class="portal-btn-retry" onclick="PortalApp.showScreen('quotes')">العودة</button>
+                </div>`;
+                return;
+            }
+
+            const q = data.quote;
+            const items = data.items || [];
+            const statusLabels = {
+                sent: 'جديد', viewed: 'تم الاطلاع', signed: 'موقّع', expired: 'منتهي', cancelled: 'ملغي'
+            };
+
+            // Build items table
+            let itemsHtml = '';
+            items.forEach((item, i) => {
+                const amount = parseFloat(item.amount || 0).toFixed(2);
+                itemsHtml += `<tr>
+                    <td>${i + 1}</td>
+                    <td>${this.escHtml(item.description)}</td>
+                    <td>${item.quantity}</td>
+                    <td>${parseFloat(item.rate || 0).toFixed(2)}</td>
+                    <td class="text-left">${amount}</td>
+                </tr>`;
+            });
+
+            // Parse terms
+            let terms = [];
+            try { terms = typeof q.terms_conditions === 'string' ? JSON.parse(q.terms_conditions) : (q.terms_conditions || []); } catch(e) { terms = []; }
+
+            let termsHtml = '';
+            terms.forEach(t => {
+                if (t.title || t.content) {
+                    termsHtml += `<div class="portal-quote-term-col">
+                        <h4>${this.escHtml(t.title || '')}</h4>
+                        <p>${this.escHtml(t.content || '')}</p>
+                    </div>`;
+                }
+            });
+
+            // Parse bank details
+            let bank = {};
+            try { bank = typeof q.bank_details === 'string' ? JSON.parse(q.bank_details) : (q.bank_details || {}); } catch(e) { bank = {}; }
+
+            // Signature section
+            let signatureHtml = '';
+            if (q.status === 'signed' && q.signature_data) {
+                signatureHtml = `
+                    <div class="portal-quote-section">
+                        <h3 class="portal-quote-section-title">التوقيع</h3>
+                        <div class="portal-signature-display">
+                            <img src="${this.escAttr(q.signature_data)}" alt="التوقيع">
+                            <p>تم التوقيع بواسطة: ${this.escHtml(q.signed_by || '—')} — ${q.signed_at ? new Date(q.signed_at).toLocaleString('ar-SA') : ''}</p>
+                        </div>
+                    </div>`;
+            } else if (q.status === 'sent' || q.status === 'viewed') {
+                signatureHtml = `
+                    <div class="portal-quote-section portal-signature-section" id="signatureSection">
+                        <h3 class="portal-quote-section-title">التوقيع الإلكتروني</h3>
+                        <div class="portal-signature-pad-wrap">
+                            <canvas id="signatureCanvas" class="portal-signature-canvas" width="600" height="200"></canvas>
+                        </div>
+                        <div class="portal-signature-controls">
+                            <div class="portal-signature-name-wrap">
+                                <label>الاسم الكامل</label>
+                                <input type="text" id="signatureName" class="portal-signature-name-input" placeholder="أدخل اسمك الكامل..." value="${this.escAttr(window.PORTAL_CONFIG?.client?.name || '')}">
+                            </div>
+                            <div class="portal-signature-btns">
+                                <button class="portal-btn-outline" onclick="PortalApp.clearSignature()">مسح التوقيع</button>
+                                <button class="portal-btn-primary" onclick="PortalApp.submitSignature('${this.escAttr(q.id)}')">تأكيد التوقيع</button>
+                            </div>
+                        </div>
+                    </div>`;
+            }
+
+            const total = parseFloat(q.total || 0).toFixed(2);
+            const subtotal = parseFloat(q.subtotal || 0).toFixed(2);
+            const taxAmount = parseFloat(q.tax_amount || 0).toFixed(2);
+            const logoUrl = 'https://lh3.googleusercontent.com/d/1OlPSnJfVk4fIQpKosLB58k7sZmxMfQuQ';
+            const estDate = q.estimate_date ? new Date(q.estimate_date).toLocaleDateString('en-GB') : '—';
+            const expDate = q.expiry_date ? new Date(q.expiry_date).toLocaleDateString('en-GB') : '—';
+
+            main.innerHTML = `
+                <div class="portal-quote-detail-page">
+                    <div class="portal-quote-detail-actions">
+                        <button class="portal-back-btn" onclick="PortalApp.showScreen('quotes')">
+                            <i data-lucide="arrow-right"></i>
+                            العودة
+                        </button>
+                        <button class="portal-btn-outline" onclick="PortalApp.generatePortalQuotePDF()">
+                            <i data-lucide="download"></i>
+                            تحميل PDF
+                        </button>
+                    </div>
+
+                    <div class="portal-quote-paper" id="portalQuotePaper">
+                        <!-- ═══ HEADER: Logo + Client Info ═══ -->
+                        <div class="pq-top-section">
+                            <div class="pq-logo-area">
+                                <img src="${logoUrl}" alt="PYRAMEDIA X" class="pq-logo-img" crossorigin="anonymous">
+                            </div>
+                            <div class="pq-client-info">
+                                <div class="pq-client-row">
+                                    <div class="pq-cf"><span class="pq-cf-label">Client</span><span class="pq-cf-value">${this.escHtml(q.client_name || '—')}</span></div>
+                                    <div class="pq-cf"><span class="pq-cf-label">Email</span><span class="pq-cf-value">${this.escHtml(q.client_email || '—')}</span></div>
+                                    <div class="pq-cf"><span class="pq-cf-label">Address</span><span class="pq-cf-value">${this.escHtml(q.client_address || '—')}</span></div>
+                                </div>
+                                <div class="pq-client-row">
+                                    <div class="pq-cf"><span class="pq-cf-label">Contact</span><span class="pq-cf-value">${this.escHtml(q.client_name || '—')}</span></div>
+                                    <div class="pq-cf"><span class="pq-cf-label">Phone</span><span class="pq-cf-value">${this.escHtml(q.client_phone || '—')}</span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ═══ ORANGE DIVIDER ═══ -->
+                        <div class="pq-divider-orange"></div>
+
+                        <!-- ═══ INVOICE DETAILS ROW ═══ -->
+                        <div class="pq-details-row">
+                            <div class="pq-detail"><span class="pq-detail-label">INVOICE NUMBER</span><span class="pq-detail-value">${this.escHtml(q.quote_number)}</span></div>
+                            <div class="pq-detail"><span class="pq-detail-label">Estimate Date</span><span class="pq-detail-value">${estDate}</span></div>
+                            <div class="pq-detail"><span class="pq-detail-label">Expiry Date</span><span class="pq-detail-value">${expDate}</span></div>
+                            <div class="pq-detail"><span class="pq-detail-label">Project Name</span><span class="pq-detail-value">${this.escHtml(q.project_name || '—')}</span></div>
+                        </div>
+
+                        <!-- ═══ ITEMS TABLE ═══ -->
+                        <div class="pq-items-section">
+                            <h3 class="pq-items-title"><span class="pq-orange-dot"></span> ITEM & DESCRIPTION</h3>
+                            <table class="portal-quote-table">
+                                <thead>
+                                    <tr>
+                                        <th style="text-align:left;width:55%">ITEM & DESCRIPTION</th>
+                                        <th style="text-align:center;width:12%">QTY</th>
+                                        <th style="text-align:center;width:15%">RATE</th>
+                                        <th style="text-align:center;width:18%">AMOUNT</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${itemsHtml}</tbody>
+                            </table>
+                        </div>
+
+                        <!-- ═══ TOTAL BOX ═══ -->
+                        <div class="pq-total-section">
+                            <div class="pq-total-box">
+                                <div class="pq-total-label">TOTAL</div>
+                                <div class="pq-total-value">${total}</div>
+                            </div>
+                        </div>
+
+                        ${q.notes ? `
+                            <div class="pq-notes-section">
+                                <h3 class="pq-section-label">NOTES</h3>
+                                <p class="pq-notes-text">${this.escHtml(q.notes)}</p>
+                            </div>
+                        ` : ''}
+
+                        ${signatureHtml}
+
+                        <!-- ═══ BANK ACCOUNT DETAILS (FIXED) ═══ -->
+                        <div class="pq-bank-section">
+                            <h3 class="pq-bank-title">Bank account details</h3>
+                            <div class="pq-bank-grid">
+                                <div class="pq-bank-col">
+                                    <div class="pq-bank-row"><span class="pqb-label">Name of the bank:</span> <span class="pqb-value">Adib</span></div>
+                                    <div class="pq-bank-row"><span class="pqb-label">Account name:</span> <span class="pqb-value">PYRAMEDIAX AI DEVELOPING SERVICES</span></div>
+                                    <div class="pq-bank-row"><span class="pqb-label">Account Type:</span> <span class="pqb-value">AED - Business Connect Current Acc</span></div>
+                                </div>
+                                <div class="pq-bank-col">
+                                    <div class="pq-bank-row"><span class="pqb-label">Account Class:</span> <span class="pqb-value">CURRENT ACCOUNT</span></div>
+                                    <div class="pq-bank-row"><span class="pqb-label">Account No:</span> <span class="pqb-value">19593331</span></div>
+                                    <div class="pq-bank-row"><span class="pqb-label">IBAN:</span> <span class="pqb-value">AE950500000000019593331</span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ═══ TERMS & CONDITIONS (FIXED) ═══ -->
+                        <div class="pq-terms-section">
+                            <h3 class="pq-terms-title">TERMS & CONDITIONS</h3>
+                            <div class="pq-terms-grid">
+                                <div class="pq-terms-col">
+                                    <h4>Payment</h4>
+                                    <p>Projects below AED 5,000 require 100% advance payment. Projects above AED 5,000 require 50% advance payment, with the balance payable upon final delivery before release of assets.</p>
+                                    <h4>Scope & Revisions</h4>
+                                    <p>This quotation is based on the agreed scope. Any changes outside scope will be charged additionally. Includes up to 2 revision rounds unless stated otherwise.</p>
+                                    <h4>Validity</h4>
+                                    <p>This quotation is valid for 7 days from the issue date.</p>
+                                    <h4>Delivery</h4>
+                                    <p>Timelines start after advance payment and final brief approval. Client delays may affect delivery schedules.</p>
+                                </div>
+                                <div class="pq-terms-col">
+                                    <h4>Cancellation</h4>
+                                    <p>Cancellation within 24 hours: 100% charge. Cancellation within 48 hours: 75% charge. Completed work is fully chargeable.</p>
+                                    <h4>Overtime</h4>
+                                    <p>Overtime is charged at AED 500/hour unless agreed otherwise.</p>
+                                    <h4>Intellectual Property</h4>
+                                    <p>All materials remain the service provider's property until full payment. Usage rights are granted upon full payment for the agreed purpose only.</p>
+                                </div>
+                                <div class="pq-terms-col">
+                                    <h4>Liability</h4>
+                                    <p>Liability is limited to the total value of this quotation.</p>
+                                    <h4>Governing Law</h4>
+                                    <p>UAE law applies. Jurisdiction: DIFC Courts.</p>
+                                    <h4>Acceptance</h4>
+                                    <p>Advance payment or written confirmation confirms full acceptance of these terms.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ═══ FOOTER (FIXED) ═══ -->
+                        <div class="pq-footer">
+                            <div class="pq-footer-left">
+                                <span>📞 +971 565799505</span>
+                                <span>@pyramedia.dxb</span>
+                            </div>
+                            <div class="pq-footer-right">
+                                <span>WWW.PYRAMEDIA.INFO</span> - <span>WWW.PYRAMEDIA.AI</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+
+            // Init signature pad if present
+            if (q.status === 'sent' || q.status === 'viewed') {
+                setTimeout(() => this._initSignaturePad('signatureCanvas'), 100);
+            }
+
+        } catch (e) {
+            main.innerHTML = `<div class="portal-error-state"><p>خطأ: ${this.escHtml(e.message)}</p></div>`;
+        }
+    },
+
+    _initSignaturePad(canvasId) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        const rect = canvas.getBoundingClientRect();
+
+        // Set canvas resolution
+        canvas.width = rect.width * 2;
+        canvas.height = rect.height * 2;
+        ctx.scale(2, 2);
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        let drawing = false;
+        let lastX = 0, lastY = 0;
+
+        this._signatureCanvas = { canvas, ctx, isEmpty: true };
+
+        const getPos = (e) => {
+            const r = canvas.getBoundingClientRect();
+            if (e.touches && e.touches[0]) {
+                return { x: e.touches[0].clientX - r.left, y: e.touches[0].clientY - r.top };
+            }
+            return { x: e.clientX - r.left, y: e.clientY - r.top };
+        };
+
+        const start = (e) => {
+            e.preventDefault();
+            drawing = true;
+            const pos = getPos(e);
+            lastX = pos.x;
+            lastY = pos.y;
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+        };
+
+        const move = (e) => {
+            if (!drawing) return;
+            e.preventDefault();
+            const pos = getPos(e);
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+            lastX = pos.x;
+            lastY = pos.y;
+            this._signatureCanvas.isEmpty = false;
+        };
+
+        const stop = (e) => {
+            if (drawing) {
+                drawing = false;
+                ctx.closePath();
+            }
+        };
+
+        canvas.addEventListener('mousedown', start);
+        canvas.addEventListener('mousemove', move);
+        canvas.addEventListener('mouseup', stop);
+        canvas.addEventListener('mouseleave', stop);
+        canvas.addEventListener('touchstart', start, { passive: false });
+        canvas.addEventListener('touchmove', move, { passive: false });
+        canvas.addEventListener('touchend', stop);
+    },
+
+    clearSignature() {
+        if (!this._signatureCanvas) return;
+        const { canvas, ctx } = this._signatureCanvas;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        this._signatureCanvas.isEmpty = true;
+    },
+
+    async submitSignature(quoteId) {
+        if (!this._signatureCanvas || this._signatureCanvas.isEmpty) {
+            this.toast('يرجى التوقيع أولاً', 'warning');
+            return;
+        }
+
+        const name = document.getElementById('signatureName')?.value?.trim();
+        if (!name) {
+            this.toast('يرجى إدخال الاسم الكامل', 'warning');
+            return;
+        }
+
+        const signatureData = this._signatureCanvas.canvas.toDataURL('image/png');
+
+        try {
+            const res = await this.apiFetch('?action=client_sign_quote', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    quote_id: quoteId,
+                    signature_data: signatureData,
+                    signed_by: name
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                this.toast('تم التوقيع بنجاح!', 'success');
+                // Reload the quote detail
+                setTimeout(() => this.renderQuoteDetail(quoteId), 500);
+            } else {
+                this.toast(data.error || 'فشل في حفظ التوقيع', 'error');
+            }
+        } catch (e) {
+            this.toast('خطأ: ' + e.message, 'error');
+        }
+    },
+
+    async generatePortalQuotePDF() {
+        const el = document.getElementById('portalQuotePaper');
+        if (!el) { this.toast('لم يتم العثور على صفحة العرض', 'error'); return; }
+        if (typeof html2canvas === 'undefined' || typeof jspdf === 'undefined') {
+            this.toast('جاري تحميل مكتبات PDF، حاول مرة أخرى', 'warning');
+            return;
+        }
+        this.toast('جاري إنشاء ملف PDF...', 'info');
+        try {
+            const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+            const imgData = canvas.toDataURL('image/png');
+            const { jsPDF } = jspdf;
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+            let position = 0;
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            if (pdfHeight <= pageHeight) {
+                pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            } else {
+                while (position < pdfHeight) {
+                    pdf.addImage(imgData, 'PNG', 0, -position, pdfWidth, pdfHeight);
+                    position += pageHeight;
+                    if (position < pdfHeight) pdf.addPage();
+                }
+            }
+            pdf.save('quote.pdf');
+            this.toast('تم تحميل الملف بنجاح!', 'success');
+        } catch (e) {
+            this.toast('فشل في إنشاء PDF: ' + e.message, 'error');
         }
     }
 };

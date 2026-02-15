@@ -3076,3 +3076,331 @@
         background: rgba(255, 255, 255, 0.15);
     }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   QUOTATION SYSTEM — Client Portal Styles
+   ═══════════════════════════════════════════════════════════════ */
+
+.portal-quotes-page {
+    padding: 24px;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.portal-page-header {
+    margin-bottom: 20px;
+}
+.portal-page-title {
+    font-size: 24px;
+    font-weight: 700;
+    color: #fff;
+}
+
+/* Quote Filter Tabs */
+.portal-quote-filters {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 20px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+}
+.portal-quote-filter-btn {
+    padding: 8px 16px;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    background: rgba(255,255,255,0.05);
+    color: rgba(255,255,255,0.6);
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+.portal-quote-filter-btn:hover {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+}
+.portal-quote-filter-btn.active {
+    background: var(--accent, #F97316);
+    color: #fff;
+    border-color: var(--accent, #F97316);
+    font-weight: 600;
+}
+
+/* Quote Cards Grid */
+.portal-quotes-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.portal-quote-card {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 18px 20px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    animation: portalFadeUp 0.4s ease both;
+}
+.portal-quote-card:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.15);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+}
+.portal-quote-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.portal-quote-card-number {
+    font-weight: 700;
+    color: var(--accent, #F97316);
+    font-size: 15px;
+}
+.portal-quote-card-project {
+    font-size: 14px;
+    color: rgba(255,255,255,0.7);
+    margin-bottom: 10px;
+}
+.portal-quote-card-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.portal-quote-card-date {
+    font-size: 12px;
+    color: rgba(255,255,255,0.4);
+}
+.portal-quote-card-total {
+    font-weight: 700;
+    font-size: 16px;
+    color: #fff;
+}
+
+/* Portal Quote Status Badges */
+.portal-quote-status {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+}
+.portal-quote-status.sent { background: rgba(59,130,246,0.2); color: #93c5fd; }
+.portal-quote-status.viewed { background: rgba(251,191,36,0.2); color: #fcd34d; }
+.portal-quote-status.signed { background: rgba(34,197,94,0.2); color: #86efac; }
+.portal-quote-status.expired { background: rgba(239,68,68,0.2); color: #fca5a5; }
+.portal-quote-status.cancelled { background: rgba(107,114,128,0.2); color: #9ca3af; }
+
+/* Quote Detail Page */
+.portal-quote-detail-page {
+    padding: 24px;
+    max-width: 900px;
+    margin: 0 auto;
+}
+.portal-quote-detail-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+.portal-btn-outline {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 10px;
+    background: transparent;
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+.portal-btn-outline:hover { background: rgba(255,255,255,0.1); }
+.portal-btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 10px;
+    background: var(--accent, #F97316);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+.portal-btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+
+/* White Quote Paper */
+.portal-quote-paper {
+    background: #ffffff;
+    color: #333;
+    padding: 0;
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    font-family: 'Inter', system-ui, sans-serif;
+    overflow: hidden;
+}
+
+/* ═══ Portal Quote — Top Section ═══ */
+.pq-top-section {
+    display: flex;
+    gap: 28px;
+    padding: 32px 36px 24px;
+    align-items: flex-start;
+}
+.pq-logo-area { flex: 0 0 180px; display: flex; align-items: center; justify-content: center; }
+.pq-logo-img { max-width: 160px; max-height: 110px; object-fit: contain; }
+.pq-client-info { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+.pq-client-row { display: flex; gap: 16px; }
+.pq-client-row > .pq-cf { flex: 1; }
+.pq-cf { display: flex; flex-direction: column; gap: 2px; }
+.pq-cf-label { font-size: 11px; font-weight: 700; color: #999; text-transform: uppercase; letter-spacing: 0.5px; }
+.pq-cf-value { font-size: 14px; color: #333; padding: 4px 0; border-bottom: 1px dashed #ddd; }
+
+/* ═══ Orange Divider ═══ */
+.pq-divider-orange { height: 2px; background: #F97316; }
+
+/* ═══ Details Row ═══ */
+.pq-details-row { display: flex; padding: 18px 36px; border-bottom: 1px solid #eee; gap: 0; }
+.pq-detail { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.pq-detail-label { font-size: 11px; font-weight: 700; color: #999; text-transform: uppercase; }
+.pq-detail-value { font-size: 15px; font-weight: 600; color: #333; }
+
+/* ═══ Items Section ═══ */
+.pq-items-section { padding: 24px 36px 0; }
+.pq-items-title {
+    font-size: 14px; font-weight: 800; color: #333; text-transform: uppercase;
+    letter-spacing: 0.5px; margin: 0 0 14px; display: flex; align-items: center; gap: 8px;
+}
+.pq-orange-dot { width: 14px; height: 14px; border-radius: 3px; background: #F97316; display: inline-block; }
+
+/* Quote Items Table (portal) */
+.portal-quote-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 16px;
+}
+.portal-quote-table thead th {
+    font-size: 11px;
+    font-weight: 700;
+    color: #999;
+    text-transform: uppercase;
+    padding: 10px 8px;
+    border-bottom: 2px solid #eee;
+}
+.portal-quote-table tbody td {
+    padding: 10px 8px;
+    font-size: 13px;
+    color: #333;
+    border-bottom: 1px solid #f3f4f6;
+}
+
+/* ═══ Total Box ═══ */
+.pq-total-section { display: flex; justify-content: flex-end; padding: 24px 36px; }
+.pq-total-box {
+    border: 1px solid #ddd; border-radius: 12px; padding: 16px 32px;
+    text-align: center; min-width: 140px;
+}
+.pq-total-label { font-size: 12px; font-weight: 700; color: #999; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+.pq-total-value { font-size: 22px; font-weight: 700; color: #F97316; }
+
+/* ═══ Notes ═══ */
+.pq-notes-section { padding: 0 36px 20px; }
+.pq-section-label { font-size: 12px; font-weight: 700; color: #999; text-transform: uppercase; margin: 0 0 8px; }
+.pq-notes-text { font-size: 13px; color: #555; line-height: 1.6; font-style: italic; white-space: pre-wrap; }
+
+/* ═══ Bank Section (Fixed) ═══ */
+.pq-bank-section { padding: 24px 36px; border-top: 1px solid #eee; }
+.pq-bank-title { font-size: 15px; font-weight: 700; color: #333; margin: 0 0 14px; }
+.pq-bank-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 40px; }
+.pq-bank-col { display: flex; flex-direction: column; gap: 6px; }
+.pq-bank-row { font-size: 13px; color: #555; line-height: 1.5; }
+.pqb-label { color: #888; }
+.pqb-value { font-weight: 700; color: #333; }
+
+/* ═══ Terms Section (Fixed) ═══ */
+.pq-terms-section { padding: 24px 36px; border-top: 1px solid #eee; }
+.pq-terms-title { font-size: 15px; font-weight: 800; color: #333; text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 18px; }
+.pq-terms-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.pq-terms-col h4 { font-size: 13px; font-weight: 700; color: #333; margin: 0 0 4px; }
+.pq-terms-col p { font-size: 12px; color: #666; line-height: 1.5; margin: 0 0 14px; }
+
+/* ═══ Footer (Fixed) ═══ */
+.pq-footer {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 36px; background: #333; color: #fff; font-size: 13px;
+    border-radius: 0 0 16px 16px;
+}
+.pq-footer-left { display: flex; align-items: center; gap: 16px; }
+.pq-footer-right { color: #F97316; font-weight: 600; font-size: 13px; }
+
+/* Signature Section */
+.portal-signature-section {
+    margin: 0;
+    padding: 24px 36px;
+    border-top: 1px solid #eee;
+}
+.portal-quote-section-title {
+    font-size: 13px; font-weight: 700; color: #374151;
+    text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 12px;
+}
+.portal-signature-pad-wrap {
+    border: 2px dashed #d1d5db; border-radius: 12px;
+    overflow: hidden; background: #fafafa; margin-bottom: 16px;
+}
+.portal-signature-canvas {
+    width: 100%; height: 200px; cursor: crosshair; display: block; touch-action: none;
+}
+.portal-signature-controls {
+    display: flex; justify-content: space-between; align-items: flex-end; gap: 16px;
+}
+.portal-signature-name-wrap { flex: 1; }
+.portal-signature-name-wrap label {
+    display: block; font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 4px;
+}
+.portal-signature-name-input {
+    width: 100%; padding: 10px 14px; border: 1px solid #d1d5db;
+    border-radius: 8px; font-size: 14px; color: #1a1a2e; background: #fff; font-family: inherit;
+}
+.portal-signature-name-input:focus {
+    outline: none; border-color: #F97316; box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.1);
+}
+.portal-signature-btns { display: flex; gap: 8px; }
+.portal-signature-display {
+    text-align: center; padding: 20px 36px; border-top: 1px solid #eee;
+}
+.portal-signature-display img { max-width: 300px; max-height: 150px; border: 1px solid #eee; border-radius: 8px; padding: 8px; background: #fafafa; }
+.portal-signature-display p { margin: 10px 0 0; font-size: 12px; color: #6b7280; }
+
+/* Animation */
+@keyframes portalFadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .portal-quote-paper { border-radius: 12px; }
+    .pq-top-section { flex-direction: column; padding: 20px 16px; }
+    .pq-logo-area { flex: none; }
+    .pq-client-row { flex-direction: column; gap: 8px; }
+    .pq-details-row { flex-wrap: wrap; padding: 12px 16px; }
+    .pq-detail { flex: 0 0 48%; }
+    .pq-items-section, .pq-notes-section, .pq-bank-section,
+    .pq-terms-section, .pq-total-section, .portal-signature-section,
+    .portal-signature-display { padding-left: 16px; padding-right: 16px; }
+    .pq-bank-grid { grid-template-columns: 1fr; }
+    .pq-terms-grid { grid-template-columns: 1fr; }
+    .pq-footer { flex-direction: column; gap: 8px; text-align: center; padding: 12px 16px; border-radius: 0 0 12px 12px; }
+    .portal-signature-controls { flex-direction: column; }
+    .portal-quote-detail-actions { flex-direction: column; gap: 10px; }
+    .portal-quotes-page { padding: 16px; }
+}

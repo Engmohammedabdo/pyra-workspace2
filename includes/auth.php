@@ -1670,3 +1670,31 @@ function generateClientId(): string {
 function generatePortalId(string $prefix = 'p'): string {
     return $prefix . '_' . time() . '_' . substr(bin2hex(random_bytes(4)), 0, 4);
 }
+
+function generateQuoteId(): string {
+    return 'qt_' . bin2hex(random_bytes(12));
+}
+
+function generateQuoteItemId(): string {
+    return 'qi_' . bin2hex(random_bytes(12));
+}
+
+function generateNextQuoteNumber(): string {
+    // Get prefix from pyra_settings (key=primary key, no team_id column)
+    $prefixRes = dbRequest('GET', '/pyra_settings?key=eq.quote_number_prefix&select=value');
+    $prefix = (($prefixRes['httpCode'] ?? 0) === 200 && !empty($prefixRes['data'])) ? $prefixRes['data'][0]['value'] : 'QT-';
+
+    // Get and increment counter
+    $counterRes = dbRequest('GET', '/pyra_settings?key=eq.quote_number_counter&select=key,value');
+    if (($counterRes['httpCode'] ?? 0) === 200 && !empty($counterRes['data'])) {
+        $counter = (int)$counterRes['data'][0]['value'];
+        // Increment counter (key is the primary key)
+        dbRequest('PATCH', '/pyra_settings?key=eq.quote_number_counter', [
+            'value' => (string)($counter + 1)
+        ]);
+    } else {
+        $counter = 1;
+    }
+
+    return $prefix . str_pad($counter, 4, '0', STR_PAD_LEFT);
+}
