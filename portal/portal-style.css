@@ -2111,6 +2111,413 @@
         font-size: 0.82rem;
         color: var(--text-muted);
     }
+
+    /* ========================================
+       NOTIFICATIONS — Phase 6
+       ======================================== */
+
+    .portal-notifications {
+        animation: portalFadeIn 0.4s ease;
+    }
+
+    .portal-notif-toolbar {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 16px;
+    }
+
+    .portal-btn--sm {
+        padding: 7px 14px;
+        font-size: 0.8rem;
+    }
+
+    .portal-notif-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .portal-notif-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+        padding: 16px 18px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        cursor: pointer;
+        transition: all var(--transition);
+        animation: portalCardEnter 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+        position: relative;
+
+        &:hover {
+            border-color: color-mix(in srgb, var(--accent), transparent 70%);
+            background: color-mix(in srgb, var(--accent), transparent 97%);
+        }
+    }
+
+    .portal-notif-item--unread {
+        background: color-mix(in srgb, var(--accent), var(--bg-secondary) 97%);
+        border-color: var(--accent-border);
+
+        & .portal-notif-title {
+            color: var(--text-primary);
+            font-weight: 700;
+        }
+    }
+
+    .portal-notif-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        border-radius: 10px;
+        background: var(--bg-tertiary);
+    }
+
+    .portal-notif-content {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .portal-notif-title {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+        margin-bottom: 3px;
+        line-height: 1.5;
+    }
+
+    .portal-notif-message {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        line-height: 1.5;
+        margin-bottom: 4px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .portal-notif-time {
+        font-size: 0.72rem;
+        color: var(--text-muted);
+    }
+
+    .portal-notif-dot {
+        width: 8px;
+        height: 8px;
+        min-width: 8px;
+        border-radius: 50%;
+        background: var(--accent);
+        margin-top: 6px;
+        box-shadow: 0 0 8px color-mix(in srgb, var(--accent), transparent 50%);
+    }
+
+    /* ========================================
+       COMMENTS — Phase 6
+       ======================================== */
+
+    .portal-comments-section {
+        margin-top: 32px;
+        padding-top: 24px;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .portal-comments-header {
+        margin-bottom: 16px;
+    }
+
+    .portal-section-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+    .portal-comments-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-bottom: 16px;
+    }
+
+    .portal-comments-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        padding: 32px 16px;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        text-align: center;
+    }
+
+    .portal-comments-loading {
+        display: flex;
+        justify-content: center;
+        padding: 32px;
+    }
+
+    .portal-comments-error {
+        text-align: center;
+        padding: 24px;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+
+        & p {
+            margin-bottom: 10px;
+        }
+    }
+
+    .portal-comment {
+        display: flex;
+        gap: 10px;
+        padding: 12px 0;
+    }
+
+    .portal-comment--nested {
+        margin-right: 36px;
+        padding-right: 14px;
+        border-right: 2px solid var(--border-color);
+    }
+
+    .portal-comment-avatar {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        min-width: 32px;
+        border-radius: 50%;
+        background: var(--bg-tertiary);
+        color: var(--text-muted);
+    }
+
+    .portal-comment--team .portal-comment-avatar {
+        background: rgba(59, 130, 246, 0.12);
+        color: var(--portal-info);
+    }
+
+    .portal-comment--client .portal-comment-avatar {
+        background: var(--accent-bg);
+        color: var(--accent);
+    }
+
+    .portal-comment-body {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .portal-comment-meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 4px;
+        flex-wrap: wrap;
+
+        & strong {
+            font-size: 0.85rem;
+            font-weight: 700;
+        }
+
+        & time {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+        }
+    }
+
+    .portal-comment-badge {
+        font-size: 0.65rem;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+    }
+
+    .portal-comment-badge--team {
+        background: rgba(59, 130, 246, 0.12);
+        color: #3b82f6;
+    }
+
+    .portal-comment-badge--client {
+        background: var(--accent-bg);
+        color: var(--accent);
+    }
+
+    .portal-comment-text {
+        font-size: 0.88rem;
+        color: var(--text-secondary);
+        line-height: 1.7;
+        word-break: break-word;
+    }
+
+    .portal-comment-reply-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: transparent;
+        border: none;
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        font-weight: 500;
+        font-family: var(--font-arabic), var(--font-sans);
+        cursor: pointer;
+        padding: 4px 0;
+        margin-top: 4px;
+        transition: color var(--transition);
+
+        &:hover {
+            color: var(--accent);
+        }
+    }
+
+    .portal-reply-form-slot {
+        margin-top: 8px;
+    }
+
+    .portal-comment-form {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius);
+        padding: 14px;
+    }
+
+    .portal-comment-input {
+        min-height: 60px;
+        font-size: 0.85rem;
+    }
+
+    .portal-comment-form-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+        justify-content: flex-end;
+    }
+
+    /* ========================================
+       PROFILE — Phase 6
+       ======================================== */
+
+    .portal-profile {
+        animation: portalFadeIn 0.4s ease;
+        max-width: 700px;
+    }
+
+    .portal-profile-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        padding: 28px 32px;
+        margin-top: 20px;
+    }
+
+    .portal-profile-header {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .portal-profile-avatar {
+        width: 80px;
+        height: 80px;
+        min-width: 80px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--accent-dim), var(--accent));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        box-shadow: 0 4px 16px color-mix(in srgb, var(--accent), transparent 60%);
+    }
+
+    .portal-profile-avatar-img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .portal-profile-avatar-initials {
+        font-size: 1.75rem;
+        font-weight: 800;
+        color: white;
+        letter-spacing: -0.02em;
+    }
+
+    .portal-profile-info {
+        flex: 1;
+        min-width: 0;
+
+        & h3 {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+    }
+
+    .portal-profile-email {
+        font-size: 0.88rem;
+        color: var(--text-secondary);
+        margin-bottom: 10px;
+        direction: ltr;
+        text-align: right;
+    }
+
+    .portal-profile-tags {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .portal-profile-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        background: var(--bg-tertiary);
+        padding: 4px 10px;
+        border-radius: 8px;
+        font-weight: 500;
+    }
+
+    .portal-profile-form {
+        margin-top: 16px;
+    }
+
+    .portal-profile-form .portal-form-group {
+        margin-bottom: 18px;
+    }
+
+    .portal-input--rtl {
+        direction: rtl;
+        text-align: right;
+    }
+
+    .portal-select {
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23505c74' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: left 14px center;
+        padding-left: 36px;
+        cursor: pointer;
+
+        & option {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+    }
+
+    .portal-form-hint {
+        display: block;
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        margin-top: 6px;
+    }
 }
 
 /* ---- Utilities Layer ---- */
@@ -2307,6 +2714,14 @@
         .portal-preview-info-panel {
             padding: 18px;
         }
+
+        .portal-profile-card {
+            padding: 20px 24px;
+        }
+
+        .portal-comment--nested {
+            margin-right: 24px;
+        }
     }
 
     @media (max-width: 768px) {
@@ -2473,6 +2888,58 @@
 
         .portal-approval-actions {
             flex-direction: column;
+        }
+
+        /* Phase 6 mobile */
+        .portal-profile-header {
+            flex-direction: column;
+            text-align: center;
+        }
+
+        .portal-profile-info {
+            text-align: center;
+        }
+
+        .portal-profile-email {
+            text-align: center;
+        }
+
+        .portal-profile-tags {
+            justify-content: center;
+        }
+
+        .portal-profile-avatar {
+            width: 64px;
+            height: 64px;
+            min-width: 64px;
+        }
+
+        .portal-profile-avatar-initials {
+            font-size: 1.4rem;
+        }
+
+        .portal-profile-card {
+            padding: 18px 16px;
+        }
+
+        .portal-notif-item {
+            padding: 12px 14px;
+            gap: 10px;
+        }
+
+        .portal-notif-icon {
+            width: 34px;
+            height: 34px;
+            min-width: 34px;
+        }
+
+        .portal-comment--nested {
+            margin-right: 16px;
+            padding-right: 10px;
+        }
+
+        .portal-comment-form {
+            padding: 10px;
         }
     }
 

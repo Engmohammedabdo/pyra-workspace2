@@ -1,7 +1,7 @@
 /**
  * Pyra Workspace — Client Portal App
  * Frontend controller for the client portal
- * Phase 5: Project Detail + File Preview + Approvals
+ * Phase 6: Notifications + Comments + Profile
  */
 const PortalApp = {
 
@@ -782,9 +782,17 @@ const PortalApp = {
                         <p>${catFilter !== 'all' || appFilter !== 'all' ? 'لا توجد ملفات تطابق الفلتر. جرّب تصفية مختلفة' : 'لم يتم رفع أي ملفات بعد لهذا المشروع'}</p>
                     </div>
                 `}
+
+                <div class="portal-comments-section" id="commentsSection">
+                    <div class="portal-comments-loading">
+                        <div class="portal-spinner" style="width:24px;height:24px;border-width:2px"></div>
+                    </div>
+                </div>
             </div>
         `;
         if (typeof lucide !== 'undefined') lucide.createIcons();
+        // Load comments for this project
+        this.loadComments(p.id, null);
     },
 
     _renderFileCard(f, idx) {
@@ -942,9 +950,21 @@ const PortalApp = {
                             </div>
                         ` : ''}
                     </div>
+
+                    ${f.project ? `
+                        <div class="portal-comments-section" id="commentsSection">
+                            <div class="portal-comments-loading">
+                                <div class="portal-spinner" style="width:24px;height:24px;border-width:2px"></div>
+                            </div>
+                        </div>
+                    ` : ''}
                 </div>
             `;
             if (typeof lucide !== 'undefined') lucide.createIcons();
+            // Load file-specific comments
+            if (f.project) {
+                this.loadComments(f.project.id, f.id);
+            }
         } catch (err) {
             main.innerHTML = `
                 <div class="portal-error-state">
@@ -1195,36 +1215,623 @@ const PortalApp = {
         }
     },
 
-    // ============ Notifications (stub) ============
-    async renderNotifications() {
-        const main = document.getElementById('portalMain');
-        main.innerHTML = '<div class="portal-loading"><div class="portal-spinner"></div></div>';
-        main.innerHTML = `
-            <div class="portal-stub-screen">
-                <div class="portal-empty-state">
-                    <div class="portal-empty-icon"><i data-lucide="bell"></i></div>
-                    <h3>الإشعارات</h3>
-                    <p>هذه الشاشة قيد التطوير — سيتم إضافتها في المرحلة القادمة</p>
-                </div>
+    // ============ Notifications ============
+    _notifSkeleton() {
+        return `
+            <div class="portal-notifications">
+                <div class="portal-skeleton" style="height:30px;width:120px;margin-bottom:8px"></div>
+                <div class="portal-skeleton" style="height:16px;width:200px;margin-bottom:24px"></div>
+                ${[1,2,3,4,5].map(() => `
+                    <div class="portal-notif-item portal-skeleton-card" style="margin-bottom:8px">
+                        <div style="display:flex;gap:14px;padding:16px 18px">
+                            <div class="portal-skeleton" style="width:40px;height:40px;border-radius:10px;flex-shrink:0"></div>
+                            <div style="flex:1">
+                                <div class="portal-skeleton" style="height:16px;width:70%;margin-bottom:8px"></div>
+                                <div class="portal-skeleton" style="height:12px;width:50%"></div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
             </div>
         `;
-        if (typeof lucide !== 'undefined') lucide.createIcons();
     },
 
-    // ============ Profile (stub) ============
-    async renderProfile() {
+    _notifPage: 1,
+
+    async renderNotifications(page) {
         const main = document.getElementById('portalMain');
-        main.innerHTML = '<div class="portal-loading"><div class="portal-spinner"></div></div>';
-        main.innerHTML = `
-            <div class="portal-stub-screen">
-                <div class="portal-empty-state">
-                    <div class="portal-empty-icon"><i data-lucide="user"></i></div>
-                    <h3>الملف الشخصي</h3>
-                    <p>هذه الشاشة قيد التطوير — سيتم إضافتها في المرحلة القادمة</p>
+        main.innerHTML = this._notifSkeleton();
+        this._notifPage = page || 1;
+
+        try {
+            const res = await this.apiFetch(`?action=client_notifications&page=${this._notifPage}`);
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+
+            const list = data.notifications || [];
+            const total = data.total || 0;
+            const totalPages = Math.ceil(total / (data.per_page || 20));
+            const hasUnread = list.some(n => !n.is_read);
+
+            main.innerHTML = `
+                <div class="portal-notifications">
+                    <div class="portal-page-header">
+                        <h2 class="portal-page-title">الإشعارات</h2>
+                        <span class="portal-page-count">${total} إشعار</span>
+                    </div>
+                    ${hasUnread ? `
+                        <div class="portal-notif-toolbar">
+                            <button class="portal-btn portal-btn--ghost portal-btn--sm" onclick="PortalApp.markAllNotifRead()">
+                                <i data-lucide="check-check" style="width:14px;height:14px"></i>
+                                تعيين الكل كمقروء
+                            </button>
+                        </div>
+                    ` : ''}
+
+                    ${list.length > 0 ? `
+                        <div class="portal-notif-list">
+                            ${list.map((n, idx) => this._renderNotifItem(n, idx)).join('')}
+                        </div>
+                    ` : `
+                        <div class="portal-empty-state">
+                            <div class="portal-empty-icon"><i data-lucide="bell-off"></i></div>
+                            <h3>لا توجد إشعارات</h3>
+                            <p>ستظهر هنا الإشعارات عند وجود تحديثات جديدة</p>
+                        </div>
+                    `}
+
+                    ${this._renderNotifPagination(total, this._notifPage, data.per_page || 20)}
+                </div>
+            `;
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        } catch (err) {
+            main.innerHTML = `
+                <div class="portal-error-state">
+                    <div class="portal-error-icon"><i data-lucide="alert-triangle"></i></div>
+                    <h3>خطأ في تحميل الإشعارات</h3>
+                    <p>${this.escHtml(err.message)}</p>
+                    <button class="portal-btn-retry" onclick="PortalApp.renderNotifications()">
+                        <i data-lucide="refresh-cw"></i> إعادة المحاولة
+                    </button>
+                </div>
+            `;
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+    },
+
+    _renderNotifItem(n, idx) {
+        const iconMap = {
+            'new_file': { icon: 'file-plus', color: 'var(--portal-info)' },
+            'file_updated': { icon: 'file-edit', color: 'var(--portal-warning)' },
+            'project_status': { icon: 'folder-sync', color: 'var(--accent)' },
+            'comment_reply': { icon: 'message-circle', color: 'var(--portal-info)' },
+            'approval_reset': { icon: 'clock', color: 'var(--portal-warning)' },
+            'welcome': { icon: 'sparkles', color: 'var(--portal-success)' }
+        };
+        const { icon, color } = iconMap[n.type] || { icon: 'bell', color: 'var(--text-muted)' };
+        const unreadCls = n.is_read ? '' : ' portal-notif-item--unread';
+
+        // Determine click action
+        let onclick = '';
+        if (n.target_file_id) {
+            onclick = `PortalApp.handleNotifClick('${this.escAttr(n.id)}', 'file_preview', '${this.escAttr(n.target_file_id)}')`;
+        } else if (n.target_project_id) {
+            onclick = `PortalApp.handleNotifClick('${this.escAttr(n.id)}', 'project_detail', '${this.escAttr(n.target_project_id)}')`;
+        } else {
+            onclick = `PortalApp.markNotifRead('${this.escAttr(n.id)}')`;
+        }
+
+        return `
+            <div class="portal-notif-item${unreadCls}" style="animation-delay:${idx * 0.03}s" onclick="${onclick}" id="notif_${this.escAttr(n.id)}">
+                <div class="portal-notif-icon" style="color:${color}">
+                    <i data-lucide="${icon}" style="width:20px;height:20px"></i>
+                </div>
+                <div class="portal-notif-content">
+                    <div class="portal-notif-title">${this.escHtml(n.title)}</div>
+                    ${n.message ? `<div class="portal-notif-message">${this.escHtml(n.message)}</div>` : ''}
+                    <time class="portal-notif-time">${this.timeAgo(n.created_at)}</time>
+                </div>
+                ${!n.is_read ? '<div class="portal-notif-dot"></div>' : ''}
+            </div>
+        `;
+    },
+
+    _renderNotifPagination(total, currentPage, perPage) {
+        const totalPages = Math.ceil(total / perPage);
+        if (totalPages <= 1) return '';
+
+        let pages = [];
+        for (let i = 1; i <= totalPages; i++) {
+            if (i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
+                pages.push(i);
+            } else if (pages[pages.length - 1] !== '...') {
+                pages.push('...');
+            }
+        }
+
+        return `
+            <div class="portal-pagination">
+                <button class="portal-pagination-btn" ${currentPage <= 1 ? 'disabled' : ''}
+                    onclick="PortalApp.renderNotifications(${currentPage - 1})">
+                    <i data-lucide="chevron-right" style="width:16px;height:16px"></i>
+                </button>
+                ${pages.map(p => p === '...'
+                    ? '<span class="portal-pagination-dots">...</span>'
+                    : `<button class="portal-pagination-btn${p === currentPage ? ' portal-pagination-active' : ''}"
+                        onclick="PortalApp.renderNotifications(${p})">${p}</button>`
+                ).join('')}
+                <button class="portal-pagination-btn" ${currentPage >= totalPages ? 'disabled' : ''}
+                    onclick="PortalApp.renderNotifications(${currentPage + 1})">
+                    <i data-lucide="chevron-left" style="width:16px;height:16px"></i>
+                </button>
+            </div>
+        `;
+    },
+
+    async handleNotifClick(notifId, screen, targetId) {
+        // Mark as read, then navigate
+        this.markNotifRead(notifId);
+        if (screen === 'file_preview') {
+            this.showScreen('file_preview', { fileId: targetId });
+        } else if (screen === 'project_detail') {
+            this.showScreen('project_detail', { projectId: targetId });
+        }
+    },
+
+    async markNotifRead(notifId) {
+        try {
+            await this.apiFetch('?action=client_mark_notif_read', {
+                method: 'POST',
+                body: { notification_id: notifId }
+            });
+            // Update UI
+            const el = document.getElementById('notif_' + notifId);
+            if (el) {
+                el.classList.remove('portal-notif-item--unread');
+                const dot = el.querySelector('.portal-notif-dot');
+                if (dot) dot.remove();
+            }
+            this.updateUnreadCount();
+        } catch (e) { /* silent */ }
+    },
+
+    async markAllNotifRead() {
+        try {
+            await this.apiFetch('?action=client_mark_all_read', { method: 'POST' });
+            this.toast('تم تعيين كل الإشعارات كمقروءة ✓', 'success');
+            this.updateUnreadCount();
+            // Re-render
+            this.renderNotifications(this._notifPage);
+        } catch (e) {
+            this.toast('حدث خطأ', 'error');
+        }
+    },
+
+    // ============ Comments ============
+    _commentsLoading: false,
+
+    async loadComments(projectId, fileId) {
+        const container = document.getElementById('commentsSection');
+        if (!container) return;
+
+        container.innerHTML = `
+            <div class="portal-comments-loading">
+                <div class="portal-spinner" style="width:24px;height:24px;border-width:2px"></div>
+            </div>
+        `;
+
+        try {
+            let url = `?action=client_get_comments&project_id=${encodeURIComponent(projectId)}`;
+            if (fileId) url += `&file_id=${encodeURIComponent(fileId)}`;
+
+            const res = await this.apiFetch(url);
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+
+            const comments = data.comments || [];
+            container.innerHTML = this._buildCommentsSection(comments, projectId, fileId);
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        } catch (err) {
+            container.innerHTML = `
+                <div class="portal-comments-error">
+                    <p>خطأ في تحميل التعليقات</p>
+                    <button class="portal-btn portal-btn--ghost portal-btn--sm"
+                        onclick="PortalApp.loadComments('${this.escAttr(projectId)}', '${this.escAttr(fileId || '')}')">
+                        إعادة المحاولة
+                    </button>
+                </div>
+            `;
+        }
+    },
+
+    _buildCommentsSection(comments, projectId, fileId) {
+        const commentsHtml = comments.length > 0
+            ? comments.map(c => this._renderComment(c, 0)).join('')
+            : '<div class="portal-comments-empty"><i data-lucide="message-circle" style="width:24px;height:24px;opacity:0.3"></i><p>لا توجد تعليقات بعد — كن أول من يعلق</p></div>';
+
+        const fileIdAttr = fileId ? `data-file-id="${this.escAttr(fileId)}"` : '';
+
+        return `
+            <div class="portal-comments-header">
+                <h4 class="portal-section-title">
+                    <i data-lucide="message-circle" style="width:18px;height:18px"></i>
+                    التعليقات
+                </h4>
+            </div>
+            <div class="portal-comments-list" id="commentsList">
+                ${commentsHtml}
+            </div>
+            <div class="portal-comment-form" data-project-id="${this.escAttr(projectId)}" ${fileIdAttr} id="commentForm">
+                <textarea class="portal-textarea portal-comment-input" id="newCommentText"
+                    placeholder="اكتب تعليقك..." rows="2"></textarea>
+                <div class="portal-comment-form-actions">
+                    <button class="portal-btn portal-btn--primary portal-btn--sm" id="commentSubmitBtn"
+                        onclick="PortalApp.addComment()">
+                        <i data-lucide="send" style="width:14px;height:14px"></i>
+                        إرسال
+                    </button>
                 </div>
             </div>
         `;
-        if (typeof lucide !== 'undefined') lucide.createIcons();
+    },
+
+    _renderComment(c, depth) {
+        const isTeam = c.author_type === 'team';
+        const typeCls = isTeam ? 'portal-comment--team' : 'portal-comment--client';
+        const badge = isTeam
+            ? '<span class="portal-comment-badge portal-comment-badge--team">فريق</span>'
+            : '<span class="portal-comment-badge portal-comment-badge--client">عميل</span>';
+        const nestedCls = depth > 0 ? ' portal-comment--nested' : '';
+        const avatarIcon = isTeam ? 'user' : 'building-2';
+
+        const repliesHtml = (c.replies && c.replies.length > 0)
+            ? c.replies.map(r => this._renderComment(r, depth + 1)).join('')
+            : '';
+
+        const replyBtn = depth < 2 ? `
+            <button class="portal-comment-reply-btn" onclick="PortalApp.showReplyForm('${this.escAttr(c.id)}')">
+                <i data-lucide="reply" style="width:12px;height:12px"></i> رد
+            </button>
+        ` : '';
+
+        return `
+            <div class="portal-comment ${typeCls}${nestedCls}">
+                <div class="portal-comment-avatar">
+                    <i data-lucide="${avatarIcon}" style="width:16px;height:16px"></i>
+                </div>
+                <div class="portal-comment-body">
+                    <div class="portal-comment-meta">
+                        <strong>${this.escHtml(c.author_name)}</strong>
+                        ${badge}
+                        <time>${this.timeAgo(c.created_at)}</time>
+                    </div>
+                    <p class="portal-comment-text">${this.escHtml(c.text)}</p>
+                    ${replyBtn}
+                    <div class="portal-reply-form-slot" id="replySlot_${this.escAttr(c.id)}" style="display:none">
+                        <textarea class="portal-textarea portal-comment-input" id="replyText_${this.escAttr(c.id)}"
+                            placeholder="اكتب ردك..." rows="2"></textarea>
+                        <div class="portal-comment-form-actions">
+                            <button class="portal-btn portal-btn--primary portal-btn--sm"
+                                onclick="PortalApp.addReply('${this.escAttr(c.id)}')">
+                                <i data-lucide="send" style="width:14px;height:14px"></i> رد
+                            </button>
+                            <button class="portal-btn portal-btn--ghost portal-btn--sm"
+                                onclick="PortalApp.hideReplyForm('${this.escAttr(c.id)}')">إلغاء</button>
+                        </div>
+                    </div>
+                    ${repliesHtml}
+                </div>
+            </div>
+        `;
+    },
+
+    showReplyForm(commentId) {
+        // Hide all other reply forms first
+        document.querySelectorAll('.portal-reply-form-slot').forEach(el => {
+            el.style.display = 'none';
+        });
+        const slot = document.getElementById('replySlot_' + commentId);
+        if (slot) {
+            slot.style.display = 'block';
+            const textarea = document.getElementById('replyText_' + commentId);
+            if (textarea) textarea.focus();
+        }
+    },
+
+    hideReplyForm(commentId) {
+        const slot = document.getElementById('replySlot_' + commentId);
+        if (slot) slot.style.display = 'none';
+    },
+
+    async addComment() {
+        const form = document.getElementById('commentForm');
+        const textarea = document.getElementById('newCommentText');
+        if (!form || !textarea) return;
+
+        const text = textarea.value.trim();
+        if (text.length < 3) {
+            this.toast('التعليق يجب أن يكون 3 حروف على الأقل', 'error');
+            return;
+        }
+
+        const projectId = form.dataset.projectId;
+        const fileId = form.dataset.fileId || null;
+        const btn = document.getElementById('commentSubmitBtn');
+        if (btn) { btn.disabled = true; btn.classList.add('portal-btn-loading'); }
+
+        try {
+            const body = { project_id: projectId, text };
+            if (fileId) body.file_id = fileId;
+
+            const res = await this.apiFetch('?action=client_add_comment', {
+                method: 'POST',
+                body
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                this.toast('تم إرسال التعليق ✓', 'success');
+                textarea.value = '';
+                // Reload comments
+                this.loadComments(projectId, fileId);
+            } else {
+                this.toast(data.error || 'حدث خطأ', 'error');
+            }
+        } catch (err) {
+            this.toast('خطأ في الاتصال بالخادم', 'error');
+        }
+        if (btn) { btn.disabled = false; btn.classList.remove('portal-btn-loading'); }
+    },
+
+    async addReply(parentId) {
+        const textarea = document.getElementById('replyText_' + parentId);
+        if (!textarea) return;
+
+        const text = textarea.value.trim();
+        if (text.length < 3) {
+            this.toast('الرد يجب أن يكون 3 حروف على الأقل', 'error');
+            return;
+        }
+
+        const form = document.getElementById('commentForm');
+        const projectId = form?.dataset.projectId;
+        const fileId = form?.dataset.fileId || null;
+        if (!projectId) return;
+
+        try {
+            const body = { project_id: projectId, text, parent_id: parentId };
+            if (fileId) body.file_id = fileId;
+
+            const res = await this.apiFetch('?action=client_add_comment', {
+                method: 'POST',
+                body
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                this.toast('تم إرسال الرد ✓', 'success');
+                this.loadComments(projectId, fileId);
+            } else {
+                this.toast(data.error || 'حدث خطأ', 'error');
+            }
+        } catch (err) {
+            this.toast('خطأ في الاتصال بالخادم', 'error');
+        }
+    },
+
+    // ============ Profile ============
+    _profileSkeleton() {
+        return `
+            <div class="portal-profile">
+                <div class="portal-skeleton" style="height:30px;width:140px;margin-bottom:24px"></div>
+                <div class="portal-profile-card portal-skeleton-card">
+                    <div style="display:flex;gap:20px;padding:28px 32px">
+                        <div class="portal-skeleton" style="width:80px;height:80px;border-radius:50%;flex-shrink:0"></div>
+                        <div style="flex:1">
+                            <div class="portal-skeleton" style="height:24px;width:200px;margin-bottom:12px"></div>
+                            <div class="portal-skeleton" style="height:14px;width:160px;margin-bottom:8px"></div>
+                            <div class="portal-skeleton" style="height:14px;width:120px"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="portal-profile-card portal-skeleton-card" style="margin-top:20px">
+                    <div style="padding:24px 32px">
+                        <div class="portal-skeleton" style="height:20px;width:120px;margin-bottom:20px"></div>
+                        <div class="portal-skeleton" style="height:44px;width:100%;margin-bottom:16px;border-radius:10px"></div>
+                        <div class="portal-skeleton" style="height:44px;width:100%;margin-bottom:16px;border-radius:10px"></div>
+                        <div class="portal-skeleton" style="height:40px;width:120px;border-radius:10px"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    async renderProfile() {
+        const main = document.getElementById('portalMain');
+        main.innerHTML = this._profileSkeleton();
+
+        try {
+            const res = await this.apiFetch('?action=client_profile');
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+
+            const c = data.client;
+            const initials = (c.name || '').split(' ').map(w => w[0]).join('').substring(0, 2);
+
+            main.innerHTML = `
+                <div class="portal-profile">
+                    <h2 class="portal-page-title">الملف الشخصي</h2>
+
+                    <div class="portal-profile-card">
+                        <div class="portal-profile-header">
+                            <div class="portal-profile-avatar">
+                                ${c.avatar_url
+                                    ? `<img src="${this.escAttr(c.avatar_url)}" alt="" class="portal-profile-avatar-img">`
+                                    : `<span class="portal-profile-avatar-initials">${this.escHtml(initials)}</span>`
+                                }
+                            </div>
+                            <div class="portal-profile-info">
+                                <h3>${this.escHtml(c.name)}</h3>
+                                <p class="portal-profile-email">${this.escHtml(c.email)}</p>
+                                <div class="portal-profile-tags">
+                                    <span class="portal-profile-tag"><i data-lucide="building-2" style="width:12px;height:12px"></i> ${this.escHtml(c.company)}</span>
+                                    <span class="portal-profile-tag"><i data-lucide="shield" style="width:12px;height:12px"></i> ${c.role === 'primary' ? 'المسؤول الرئيسي' : 'مشاهد'}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="portal-profile-card">
+                        <h4 class="portal-section-title">
+                            <i data-lucide="edit-3" style="width:16px;height:16px"></i>
+                            تعديل البيانات
+                        </h4>
+                        <form class="portal-profile-form" id="profileForm" onsubmit="event.preventDefault(); PortalApp.updateProfile()">
+                            <div class="portal-form-group">
+                                <label class="portal-form-label">الاسم الكامل</label>
+                                <input type="text" class="portal-input portal-input--rtl" id="profileName" value="${this.escAttr(c.name)}" minlength="2" maxlength="100" required>
+                            </div>
+                            <div class="portal-form-group">
+                                <label class="portal-form-label">رقم الهاتف</label>
+                                <input type="tel" class="portal-input" id="profilePhone" value="${this.escAttr(c.phone || '')}" placeholder="+966-5x-xxx-xxxx" dir="ltr">
+                            </div>
+                            <div class="portal-form-group">
+                                <label class="portal-form-label">اللغة</label>
+                                <select class="portal-input portal-select" id="profileLanguage">
+                                    <option value="ar" ${c.language === 'ar' ? 'selected' : ''}>العربية</option>
+                                    <option value="en" ${c.language === 'en' ? 'selected' : ''}>English</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="portal-btn portal-btn--primary" id="profileSaveBtn">
+                                <i data-lucide="save" style="width:16px;height:16px"></i>
+                                حفظ التغييرات
+                            </button>
+                        </form>
+                    </div>
+
+                    <div class="portal-profile-card">
+                        <h4 class="portal-section-title">
+                            <i data-lucide="lock" style="width:16px;height:16px"></i>
+                            تغيير كلمة المرور
+                        </h4>
+                        <form class="portal-profile-form" id="passwordForm" onsubmit="event.preventDefault(); PortalApp.changePassword()">
+                            <div class="portal-form-group">
+                                <label class="portal-form-label">كلمة المرور الحالية</label>
+                                <input type="password" class="portal-input" id="currentPassword" required dir="ltr">
+                            </div>
+                            <div class="portal-form-group">
+                                <label class="portal-form-label">كلمة المرور الجديدة</label>
+                                <input type="password" class="portal-input" id="newPassword" minlength="8" required dir="ltr">
+                                <span class="portal-form-hint">8 حروف على الأقل</span>
+                            </div>
+                            <div class="portal-form-group">
+                                <label class="portal-form-label">تأكيد كلمة المرور الجديدة</label>
+                                <input type="password" class="portal-input" id="confirmPassword" minlength="8" required dir="ltr">
+                            </div>
+                            <button type="submit" class="portal-btn portal-btn--danger-outline" id="passwordSaveBtn">
+                                <i data-lucide="key" style="width:16px;height:16px"></i>
+                                تغيير كلمة المرور
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            `;
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        } catch (err) {
+            main.innerHTML = `
+                <div class="portal-error-state">
+                    <div class="portal-error-icon"><i data-lucide="alert-triangle"></i></div>
+                    <h3>خطأ في تحميل الملف الشخصي</h3>
+                    <p>${this.escHtml(err.message)}</p>
+                    <button class="portal-btn-retry" onclick="PortalApp.renderProfile()">
+                        <i data-lucide="refresh-cw"></i> إعادة المحاولة
+                    </button>
+                </div>
+            `;
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+    },
+
+    async updateProfile() {
+        const name = document.getElementById('profileName')?.value.trim();
+        const phone = document.getElementById('profilePhone')?.value.trim();
+        const language = document.getElementById('profileLanguage')?.value;
+        const btn = document.getElementById('profileSaveBtn');
+
+        if (!name || name.length < 2) {
+            this.toast('الاسم يجب أن يكون حرفين على الأقل', 'error');
+            return;
+        }
+
+        if (btn) { btn.disabled = true; btn.classList.add('portal-btn-loading'); }
+
+        try {
+            const res = await this.apiFetch('?action=client_update_profile', {
+                method: 'POST',
+                body: { name, phone, language }
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                this.toast('تم تحديث البيانات بنجاح ✓', 'success');
+                // Update header name
+                const nameEl = document.querySelector('.portal-user-name');
+                if (nameEl) nameEl.textContent = name;
+                // Update client data
+                if (this.client) {
+                    this.client.name = name;
+                    this.client.phone = phone;
+                    this.client.language = language;
+                }
+            } else {
+                this.toast(data.error || 'حدث خطأ', 'error');
+            }
+        } catch (err) {
+            this.toast('خطأ في الاتصال بالخادم', 'error');
+        }
+        if (btn) { btn.disabled = false; btn.classList.remove('portal-btn-loading'); }
+    },
+
+    async changePassword() {
+        const currentPw = document.getElementById('currentPassword')?.value;
+        const newPw = document.getElementById('newPassword')?.value;
+        const confirmPw = document.getElementById('confirmPassword')?.value;
+        const btn = document.getElementById('passwordSaveBtn');
+
+        if (!currentPw || !newPw) {
+            this.toast('جميع الحقول مطلوبة', 'error');
+            return;
+        }
+        if (newPw.length < 8) {
+            this.toast('كلمة المرور الجديدة يجب أن تكون 8 حروف على الأقل', 'error');
+            return;
+        }
+        if (newPw !== confirmPw) {
+            this.toast('كلمة المرور الجديدة وتأكيدها غير متطابقتين', 'error');
+            return;
+        }
+
+        if (btn) { btn.disabled = true; btn.classList.add('portal-btn-loading'); }
+
+        try {
+            const res = await this.apiFetch('?action=client_change_password', {
+                method: 'POST',
+                body: { current_password: currentPw, new_password: newPw }
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                this.toast('تم تغيير كلمة المرور بنجاح 🔐', 'success');
+                document.getElementById('currentPassword').value = '';
+                document.getElementById('newPassword').value = '';
+                document.getElementById('confirmPassword').value = '';
+            } else {
+                this.toast(data.error || 'حدث خطأ', 'error');
+            }
+        } catch (err) {
+            this.toast('خطأ في الاتصال بالخادم', 'error');
+        }
+        if (btn) { btn.disabled = false; btn.classList.remove('portal-btn-loading'); }
     },
 
     // ============ Notifications Badge ============
