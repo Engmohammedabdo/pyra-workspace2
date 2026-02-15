@@ -26,6 +26,9 @@ $userData = $isLoggedIn ? sessionUserInfo() : null;
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
     <!-- mammoth.js for DOCX preview -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js" crossorigin="anonymous" defer></script>
+    <!-- GSAP + ScrollTrigger — professional animations -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js" defer></script>
 </head>
 <body id="bodyEl">
 

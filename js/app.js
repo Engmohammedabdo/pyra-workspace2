@@ -162,7 +162,12 @@ const App = {
         const header = document.querySelector('.file-list-header');
         if (header) header.style.display = 'none';
 
-        grid.innerHTML = '<div class="dashboard-loading"><div class="spinner"></div> Loading dashboard...</div>';
+        grid.innerHTML = '<div class="dashboard-grid">'
+            + '<div class="dash-welcome skeleton-card" style="grid-column:1/-1;height:80px"></div>'
+            + '<div class="skeleton-card" style="height:200px"></div>'
+            + '<div class="skeleton-card" style="height:200px"></div>'
+            + '<div class="skeleton-card" style="grid-column:1/-1;height:160px"></div>'
+            + '</div>';
 
         // Update breadcrumb
         const bc = document.getElementById('breadcrumb');
@@ -197,44 +202,84 @@ const App = {
 
         html += '</div>';
         grid.innerHTML = html;
+        this._animateDashboard();
+    },
+
+    _renderActionCard(label, desc, iconSvg, onclick) {
+        return '<div class="dash-action-card" onclick="' + onclick + '">'
+            + '<div class="dash-action-icon">' + iconSvg + '</div>'
+            + '<div class="dash-action-label">' + label + '</div>'
+            + '<div class="dash-action-desc">' + desc + '</div>'
+            + '</div>';
+    },
+
+    _renderActivityItem(a) {
+        const typeMap = {
+            upload: { icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>', cls: 'upload' },
+            delete: { icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>', cls: 'delete' },
+            review_added: { icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>', cls: 'review' },
+            settings_changed: { icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>', cls: 'settings' }
+        };
+        const t = typeMap[a.action_type] || { icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>', cls: '' };
+        return '<div class="dash-list-item">'
+            + '<span class="dash-activity-icon ' + t.cls + '">' + t.icon + '</span>'
+            + '<span class="dash-list-text"><strong>' + this.escHtml(a.display_name || '') + '</strong> ' + this.escHtml(a.action_type.replace(/_/g, ' ')) + '</span>'
+            + '<span class="dash-list-meta">' + this.formatDate(a.created_at) + '</span>'
+            + '</div>';
     },
 
     _renderAdminDashboard(data) {
+        const name = (this.user?.display_name || this.user?.username || 'Admin').split(' ')[0];
+        const hour = new Date().getHours();
+        const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
         let html = '';
 
-        // Stats row
-        html += '<div class="dash-card dash-stats-row">';
-        html += '<div class="dash-stat"><span class="dash-stat-num">' + (data.user_count || 0) + '</span><span class="dash-stat-label">Users</span></div>';
-        html += '<div class="dash-stat"><span class="dash-stat-num">' + (data.file_count || 0) + '</span><span class="dash-stat-label">Files Indexed</span></div>';
-        html += '<div class="dash-stat"><span class="dash-stat-num">' + (data.pending_reviews || 0) + '</span><span class="dash-stat-label">Pending Reviews</span></div>';
+        // Welcome header (full-width)
+        html += '<div class="dash-welcome" style="grid-column:1/-1">';
+        html += '<h2 class="dash-welcome-title gradient-text">' + greeting + ', ' + this.escHtml(name) + '</h2>';
+        html += '<p style="color:var(--text-muted);margin:4px 0 0">Here\'s what\'s happening across your workspace.</p>';
         html += '</div>';
 
-        // Quick actions
+        // Stats grid (full-width)
+        html += '<div class="dash-stats-grid" style="grid-column:1/-1">';
+        html += '<div class="dash-stat-card" data-variant="primary">';
+        html += '<div class="dash-stat-icon" style="background:var(--gradient-primary)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>';
+        html += '<div class="dash-stat-num" data-count="' + (data.user_count || 0) + '">' + (data.user_count || 0) + '</div>';
+        html += '<div class="dash-stat-label">Total Users</div>';
+        html += '</div>';
+        html += '<div class="dash-stat-card" data-variant="info">';
+        html += '<div class="dash-stat-icon" style="background:var(--gradient-info)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg></div>';
+        html += '<div class="dash-stat-num" data-count="' + (data.file_count || 0) + '">' + (data.file_count || 0) + '</div>';
+        html += '<div class="dash-stat-label">Files Indexed</div>';
+        html += '</div>';
+        html += '<div class="dash-stat-card" data-variant="warning">';
+        html += '<div class="dash-stat-icon" style="background:var(--gradient-warning)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div>';
+        html += '<div class="dash-stat-num" data-count="' + (data.pending_reviews || 0) + '">' + (data.pending_reviews || 0) + '</div>';
+        html += '<div class="dash-stat-label">Pending Reviews</div>';
+        html += '</div>';
+        html += '</div>';
+
+        // Quick Actions card
         html += '<div class="dash-card">';
-        html += '<div class="dash-card-header">Quick Actions</div>';
-        html += '<div class="dash-quick-actions">';
-        html += '<button class="btn btn-primary btn-sm" onclick="App.showDashboardFiles()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> Browse Files</button>';
-        html += '<button class="btn btn-sm" onclick="App.showUsersPanel()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg> Manage Users</button>';
-        html += '<button class="btn btn-sm" onclick="App.showTeamsPanel()">Teams</button>';
-        html += '<button class="btn btn-sm" onclick="App.showTrashPanel()">Trash</button>';
-        html += '<button class="btn btn-sm" onclick="App.showActivityPanel()">Activity Log</button>';
-        html += '<button class="btn btn-sm" onclick="App.showSettingsPanel()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Settings</button>';
+        html += '<div class="dash-card-header"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Quick Actions</div>';
+        html += '<div class="dash-quick-actions-grid">';
+        html += this._renderActionCard('Browse Files', 'View all workspace files', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>', 'App.showDashboardFiles()');
+        html += this._renderActionCard('Manage Users', 'Add, edit &amp; remove', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>', 'App.showUsersPanel()');
+        html += this._renderActionCard('Teams', 'Manage team groups', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>', 'App.showTeamsPanel()');
+        html += this._renderActionCard('Trash', 'Recover deleted files', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>', 'App.showTrashPanel()');
+        html += this._renderActionCard('Activity Log', 'Track all actions', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>', 'App.showActivityPanel()');
+        html += this._renderActionCard('Settings', 'System configuration', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>', 'App.showSettingsPanel()');
         html += '</div></div>';
 
-        // Recent activity
-        html += '<div class="dash-card dash-card-wide">';
-        html += '<div class="dash-card-header">Recent Activity</div>';
+        // Recent Activity card
+        html += '<div class="dash-card">';
+        html += '<div class="dash-card-header"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Recent Activity</div>';
         html += '<div class="dash-list">';
         (data.recent_activity || []).slice(0, 8).forEach(a => {
-            const icon = a.action_type === 'upload' ? '&#128228;' : a.action_type === 'delete' ? '&#128465;' : a.action_type === 'review_added' ? '&#128172;' : '&#128203;';
-            html += '<div class="dash-list-item">';
-            html += '<span class="dash-list-icon">' + icon + '</span>';
-            html += '<span class="dash-list-text"><strong>' + this.escHtml(a.display_name) + '</strong> ' + this.escHtml(a.action_type.replace(/_/g, ' ')) + '</span>';
-            html += '<span class="dash-list-meta">' + this.formatDate(a.created_at) + '</span>';
-            html += '</div>';
+            html += this._renderActivityItem(a);
         });
         if (!data.recent_activity || data.recent_activity.length === 0) {
-            html += '<div class="dash-empty">No recent activity</div>';
+            html += '<div class="dash-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>No recent activity</div>';
         }
         html += '</div></div>';
 
@@ -246,20 +291,52 @@ const App = {
     },
 
     _renderEmployeeDashboard(data) {
+        const name = (this.user?.display_name || this.user?.username || 'there').split(' ')[0];
+        const hour = new Date().getHours();
+        const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
         let html = '';
 
-        // My folders
-        html += '<div class="dash-card">';
-        html += '<div class="dash-card-header">My Folders</div>';
-        html += '<div class="dash-list">';
+        // Welcome header (full-width)
+        html += '<div class="dash-welcome" style="grid-column:1/-1">';
+        html += '<h2 class="dash-welcome-title gradient-text">' + greeting + ', ' + this.escHtml(name) + '</h2>';
+        html += '<p style="color:var(--text-muted);margin:4px 0 0">Your workspace is ready. Here\'s your overview.</p>';
+        html += '</div>';
+
+        // Stats grid (full-width) — folders + notifications
         const folders = data.my_folders || [];
+        const folderCount = (folders.length === 1 && folders[0] === '*') ? 'All' : folders.length;
+        html += '<div class="dash-stats-grid" style="grid-column:1/-1">';
+        html += '<div class="dash-stat-card" data-variant="primary">';
+        html += '<div class="dash-stat-icon" style="background:var(--gradient-primary)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>';
+        html += '<div class="dash-stat-num">' + folderCount + '</div>';
+        html += '<div class="dash-stat-label">My Folders</div>';
+        html += '</div>';
+        html += '<div class="dash-stat-card" data-variant="warning">';
+        html += '<div class="dash-stat-icon" style="background:var(--gradient-warning)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>';
+        html += '<div class="dash-stat-num" data-count="' + (data.unread_notif_count || 0) + '">' + (data.unread_notif_count || 0) + '</div>';
+        html += '<div class="dash-stat-label">Unread Notifications</div>';
+        html += '</div>';
+        html += '<div class="dash-stat-card" data-variant="info">';
+        html += '<div class="dash-stat-icon" style="background:var(--gradient-info)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>';
+        html += '<div class="dash-stat-num" data-count="' + ((data.recent_activity || []).length) + '">' + ((data.recent_activity || []).length) + '</div>';
+        html += '<div class="dash-stat-label">Recent Actions</div>';
+        html += '</div>';
+        html += '</div>';
+
+        // My Folders card
+        html += '<div class="dash-card">';
+        html += '<div class="dash-card-header"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> My Folders</div>';
+        html += '<div class="dash-list">';
         if (folders.length === 0 || (folders.length === 1 && folders[0] === '*')) {
-            html += '<div class="dash-list-item"><span class="dash-list-text">Full workspace access</span></div>';
-            html += '<div style="padding:8px"><button class="btn btn-primary btn-sm" onclick="App.showDashboardFiles()">Browse All Files</button></div>';
+            html += '<div class="dash-list-item dash-list-clickable" onclick="App.showDashboardFiles()">';
+            html += '<span class="dash-activity-icon upload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span>';
+            html += '<span class="dash-list-text">Full workspace access</span>';
+            html += '<span class="dash-list-meta">&rarr;</span>';
+            html += '</div>';
         } else {
             folders.forEach(f => {
                 html += '<div class="dash-list-item dash-list-clickable" onclick="App.showDashboardFiles(\'' + this.escAttr(f) + '\')">';
-                html += '<span class="dash-list-icon">&#128193;</span>';
+                html += '<span class="dash-activity-icon upload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span>';
                 html += '<span class="dash-list-text">' + this.escHtml(f) + '</span>';
                 html += '<span class="dash-list-meta">&rarr;</span>';
                 html += '</div>';
@@ -267,34 +344,26 @@ const App = {
         }
         html += '</div></div>';
 
-        // Quick actions
+        // Quick Actions card
         html += '<div class="dash-card">';
-        html += '<div class="dash-card-header">Quick Actions</div>';
-        html += '<div class="dash-quick-actions">';
-        html += '<button class="btn btn-primary btn-sm" onclick="App.showDashboardFiles()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> Browse Files</button>';
-        if (this.canDo('can_upload')) html += '<button class="btn btn-sm" onclick="App.showDashboardFiles();setTimeout(()=>App.triggerUpload(),300)">Upload Files</button>';
+        html += '<div class="dash-card-header"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Quick Actions</div>';
+        html += '<div class="dash-quick-actions-grid">';
+        html += this._renderActionCard('Browse Files', 'View your folders', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>', 'App.showDashboardFiles()');
+        if (this.canDo('can_upload')) {
+            html += this._renderActionCard('Upload Files', 'Add new files', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>', 'App.showDashboardFiles();setTimeout(()=>App.triggerUpload(),300)');
+        }
+        html += this._renderActionCard('Notifications', (data.unread_notif_count || 0) + ' unread', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>', 'App.showNotificationsPanel()');
         html += '</div></div>';
 
-        // Unread notifications
-        html += '<div class="dash-card">';
-        html += '<div class="dash-card-header">Notifications <span class="dash-badge">' + (data.unread_notif_count || 0) + ' unread</span></div>';
-        html += '<div style="padding:8px"><button class="btn btn-sm" onclick="App.showNotificationsPanel()">View All Notifications</button></div>';
-        html += '</div>';
-
-        // Recent activity
-        html += '<div class="dash-card dash-card-wide">';
-        html += '<div class="dash-card-header">Recent Activity</div>';
+        // Recent Activity card (full-width)
+        html += '<div class="dash-card" style="grid-column:1/-1">';
+        html += '<div class="dash-card-header"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Recent Activity</div>';
         html += '<div class="dash-list">';
         (data.recent_activity || []).slice(0, 6).forEach(a => {
-            const icon = a.action_type === 'upload' ? '&#128228;' : a.action_type === 'delete' ? '&#128465;' : '&#128203;';
-            html += '<div class="dash-list-item">';
-            html += '<span class="dash-list-icon">' + icon + '</span>';
-            html += '<span class="dash-list-text"><strong>' + this.escHtml(a.display_name) + '</strong> ' + this.escHtml(a.action_type.replace(/_/g, ' ')) + '</span>';
-            html += '<span class="dash-list-meta">' + this.formatDate(a.created_at) + '</span>';
-            html += '</div>';
+            html += this._renderActivityItem(a);
         });
         if (!data.recent_activity || data.recent_activity.length === 0) {
-            html += '<div class="dash-empty">No recent activity</div>';
+            html += '<div class="dash-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>No recent activity</div>';
         }
         html += '</div></div>';
 
@@ -306,19 +375,28 @@ const App = {
     },
 
     _renderClientDashboard(data) {
+        const name = (this.user?.display_name || this.user?.username || 'there').split(' ')[0];
+        const hour = new Date().getHours();
+        const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
         let html = '';
 
-        // My Projects
-        html += '<div class="dash-card dash-card-wide">';
-        html += '<div class="dash-card-header">My Projects</div>';
-        html += '<div class="dash-projects">';
+        // Welcome header (full-width)
+        html += '<div class="dash-welcome" style="grid-column:1/-1">';
+        html += '<h2 class="dash-welcome-title gradient-text">' + greeting + ', ' + this.escHtml(name) + '</h2>';
+        html += '<p style="color:var(--text-muted);margin:4px 0 0">Your projects and files at a glance.</p>';
+        html += '</div>';
+
+        // My Projects (full-width)
         const stats = data.folder_stats || [];
+        html += '<div class="dash-card" style="grid-column:1/-1">';
+        html += '<div class="dash-card-header"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> My Projects <span class="dash-badge">' + stats.length + '</span></div>';
+        html += '<div class="dash-projects">';
         if (stats.length === 0) {
-            html += '<div class="dash-empty">No projects assigned yet</div>';
+            html += '<div class="dash-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>No projects assigned yet</div>';
         } else {
             stats.forEach(s => {
                 html += '<div class="dash-project-card" onclick="App.showDashboardFiles(\'' + this.escAttr(s.path) + '\')">';
-                html += '<div class="dash-project-icon">&#128193;</div>';
+                html += '<div class="dash-project-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>';
                 html += '<div class="dash-project-name">' + this.escHtml(s.path) + '</div>';
                 html += '<div class="dash-project-meta">' + s.file_count + ' files</div>';
                 if (s.last_modified) html += '<div class="dash-project-date">Updated ' + this.formatDate(s.last_modified) + '</div>';
@@ -327,43 +405,45 @@ const App = {
         }
         html += '</div></div>';
 
-        // Quick actions
+        // Quick Actions card
         html += '<div class="dash-card">';
-        html += '<div class="dash-card-header">Quick Actions</div>';
-        html += '<div class="dash-quick-actions">';
-        html += '<button class="btn btn-primary btn-sm" onclick="App.showDashboardFiles()">Browse Files</button>';
-        if (this.canDo('can_upload')) html += '<button class="btn btn-sm" onclick="App.showDashboardFiles();setTimeout(()=>App.triggerUpload(),300)">Upload Files</button>';
+        html += '<div class="dash-card-header"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Quick Actions</div>';
+        html += '<div class="dash-quick-actions-grid">';
+        html += this._renderActionCard('Browse Files', 'View your project files', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>', 'App.showDashboardFiles()');
+        if (this.canDo('can_upload')) {
+            html += this._renderActionCard('Upload Files', 'Add new files', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>', 'App.showDashboardFiles();setTimeout(()=>App.triggerUpload(),300)');
+        }
         html += '</div></div>';
 
-        // My recent reviews
+        // My Reviews card
         html += '<div class="dash-card">';
-        html += '<div class="dash-card-header">My Reviews</div>';
+        html += '<div class="dash-card-header"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg> My Reviews</div>';
         html += '<div class="dash-list">';
         (data.my_reviews || []).slice(0, 5).forEach(r => {
-            const icon = r.type === 'approval' ? '&#9989;' : '&#128172;';
+            const cls = r.type === 'approval' ? 'upload' : 'review';
+            const icon = r.type === 'approval'
+                ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="20 6 9 17 4 12"/></svg>'
+                : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
             html += '<div class="dash-list-item">';
-            html += '<span class="dash-list-icon">' + icon + '</span>';
+            html += '<span class="dash-activity-icon ' + cls + '">' + icon + '</span>';
             html += '<span class="dash-list-text">' + this.escHtml(r.text || r.type) + '</span>';
             html += '<span class="dash-list-meta">' + this.formatDate(r.created_at) + '</span>';
             html += '</div>';
         });
         if (!data.my_reviews || data.my_reviews.length === 0) {
-            html += '<div class="dash-empty">No reviews yet</div>';
+            html += '<div class="dash-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>No reviews yet</div>';
         }
         html += '</div></div>';
 
-        // Recent activity
+        // Recent Activity card
         html += '<div class="dash-card">';
-        html += '<div class="dash-card-header">Recent Activity</div>';
+        html += '<div class="dash-card-header"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Recent Activity</div>';
         html += '<div class="dash-list">';
         (data.recent_activity || []).slice(0, 5).forEach(a => {
-            html += '<div class="dash-list-item">';
-            html += '<span class="dash-list-text"><strong>' + this.escHtml(a.display_name) + '</strong> ' + this.escHtml(a.action_type.replace(/_/g, ' ')) + '</span>';
-            html += '<span class="dash-list-meta">' + this.formatDate(a.created_at) + '</span>';
-            html += '</div>';
+            html += this._renderActivityItem(a);
         });
         if (!data.recent_activity || data.recent_activity.length === 0) {
-            html += '<div class="dash-empty">No recent activity</div>';
+            html += '<div class="dash-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>No recent activity</div>';
         }
         html += '</div></div>';
 
@@ -372,6 +452,60 @@ const App = {
         html += this._renderRecentFilesDashCard();
 
         return html;
+    },
+
+    _animateDashboard() {
+        if (typeof gsap === 'undefined') return;
+
+        // Collect all top-level animatable elements in DOM order
+        const welcome = document.querySelectorAll('.dash-welcome');
+        const stats = document.querySelectorAll('.dash-stat-card');
+        const cards = document.querySelectorAll('.dash-card');
+        const actions = document.querySelectorAll('.dash-action-card');
+        const projects = document.querySelectorAll('.dash-project-card');
+        const listItems = document.querySelectorAll('.dash-list-item');
+
+        // Set initial states (hidden)
+        gsap.set([welcome, stats, cards], { opacity: 0, y: 20 });
+        gsap.set(actions, { opacity: 0, y: 12 });
+        gsap.set(projects, { opacity: 0, scale: 0.95 });
+        gsap.set(listItems, { opacity: 0, x: -8 });
+
+        // Build timeline
+        const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
+
+        // Welcome header
+        if (welcome.length) tl.to(welcome, { opacity: 1, y: 0, duration: 0.5 });
+
+        // Stat cards stagger
+        if (stats.length) tl.to(stats, { opacity: 1, y: 0, duration: 0.4, stagger: 0.1 }, '-=0.2');
+
+        // Main cards stagger
+        if (cards.length) tl.to(cards, { opacity: 1, y: 0, duration: 0.4, stagger: 0.08 }, '-=0.1');
+
+        // Action cards stagger (after their parent card is visible)
+        if (actions.length) tl.to(actions, { opacity: 1, y: 0, duration: 0.3, stagger: 0.05 }, '-=0.2');
+
+        // Project cards stagger
+        if (projects.length) tl.to(projects, { opacity: 1, scale: 1, duration: 0.3, stagger: 0.06 }, '-=0.2');
+
+        // Activity list items stagger
+        if (listItems.length) tl.to(listItems, { opacity: 1, x: 0, duration: 0.25, stagger: 0.03 }, '-=0.2');
+
+        // Counter animation on stat numbers
+        document.querySelectorAll('.dash-stat-num[data-count]').forEach(el => {
+            const target = parseInt(el.dataset.count, 10);
+            if (target > 0) {
+                const obj = { val: 0 };
+                gsap.to(obj, {
+                    val: target,
+                    duration: 1.2,
+                    delay: 0.3,
+                    ease: 'power2.out',
+                    onUpdate: () => { el.textContent = Math.round(obj.val); }
+                });
+            }
+        });
     },
 
     showDashboardFiles(path) {
