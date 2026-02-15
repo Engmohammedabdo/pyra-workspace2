@@ -1832,6 +1832,451 @@ switch ($action) {
         echo json_encode($result);
         break;
 
+    // ============================================
+    // CLIENT PORTAL — Team Management Endpoints
+    // ============================================
+
+    case 'manage_clients':
+        if (!isAdmin()) {
+            echo json_encode(['success' => false, 'error' => 'Admin access required']);
+            break;
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+            $result = dbRequest('GET', '/pyra_clients?select=id,name,email,company,phone,role,status,language,last_login_at,created_at,created_by&order=created_at.desc');
+            echo json_encode(['success' => true, 'clients' => $result['data'] ?? []]);
+            break;
+        }
+
+        $input = $jsonBody;
+        $sub = $input['sub_action'] ?? '';
+
+        switch ($sub) {
+            case 'create':
+                $name = trim($input['name'] ?? '');
+                $email = trim($input['email'] ?? '');
+                $company = trim($input['company'] ?? '');
+                $password = $input['password'] ?? '';
+                $role = $input['role'] ?? 'primary';
+                $phone = trim($input['phone'] ?? '');
+                $language = $input['language'] ?? 'ar';
+
+                if (!$name || !$email || !$company || strlen($password) < 8) {
+                    echo json_encode(['success' => false, 'error' => 'بيانات ناقصة أو كلمة المرور أقل من 8 حروف']);
+                    break;
+                }
+                if (!in_array($role, ['primary', 'billing', 'viewer'])) {
+                    echo json_encode(['success' => false, 'error' => 'نوع الصلاحية غير صالح']);
+                    break;
+                }
+                if (!in_array($language, ['ar', 'en'])) $language = 'ar';
+
+                $exists = dbRequest('GET', '/pyra_clients?email=eq.' . rawurlencode($email) . '&limit=1');
+                if (!empty($exists['data'])) {
+                    echo json_encode(['success' => false, 'error' => 'الإيميل موجود مسبقاً']);
+                    break;
+                }
+
+                $id = generateClientId();
+                $data = [
+                    'id' => $id,
+                    'name' => htmlspecialchars($name),
+                    'email' => $email,
+                    'company' => htmlspecialchars($company),
+                    'phone' => htmlspecialchars($phone),
+                    'password_hash' => password_hash($password, PASSWORD_BCRYPT),
+                    'role' => $role,
+                    'status' => 'active',
+                    'language' => $language,
+                    'created_by' => $_SESSION['user'] ?? 'admin'
+                ];
+
+                $result = dbRequest('POST', '/pyra_clients', $data, ['Prefer: return=representation']);
+                if ($result['httpCode'] === 201) {
+                    logActivity('create_client', '', ['client_email' => $email, 'company' => $company]);
+
+                    // Send welcome notification
+                    dbRequest('POST', '/pyra_client_notifications', [
+                        'id' => generatePortalId('cn'),
+                        'client_id' => $id,
+                        'type' => 'welcome',
+                        'title' => 'مرحباً بك في Pyra Workspace',
+                        'message' => 'تم إنشاء حسابك بنجاح. يمكنك الآن تصفح مشاريعك ومتابعة الملفات.'
+                    ]);
+
+                    $clientData = $result['data'][0] ?? $data;
+                    unset($clientData['password_hash']);
+                    echo json_encode(['success' => true, 'client' => $clientData]);
+                } else {
+                    echo json_encode(['success' => false, 'error' => $result['data']['message'] ?? 'فشل في إنشاء العميل']);
+                }
+                break;
+
+            case 'update':
+                $clientId = trim($input['client_id'] ?? '');
+                if (!$clientId) {
+                    echo json_encode(['success' => false, 'error' => 'معرّف العميل مطلوب']);
+                    break;
+                }
+
+                $update = [];
+                if (isset($input['name'])) $update['name'] = htmlspecialchars(trim($input['name']));
+                if (isset($input['phone'])) $update['phone'] = htmlspecialchars(trim($input['phone']));
+                if (isset($input['role']) && in_array($input['role'], ['primary', 'billing', 'viewer'])) $update['role'] = $input['role'];
+                if (isset($input['status']) && in_array($input['status'], ['active', 'inactive', 'suspended'])) $update['status'] = $input['status'];
+                if (isset($input['language']) && in_array($input['language'], ['ar', 'en'])) $update['language'] = $input['language'];
+                if (!empty($input['password']) && strlen($input['password']) >= 8) {
+                    $update['password_hash'] = password_hash($input['password'], PASSWORD_BCRYPT);
+                }
+
+                if (empty($update)) {
+                    echo json_encode(['success' => false, 'error' => 'لا توجد بيانات للتحديث']);
+                    break;
+                }
+
+                $update['updated_at'] = date('c');
+                $result = dbRequest('PATCH', '/pyra_clients?id=eq.' . rawurlencode($clientId), $update);
+                if ($result['httpCode'] === 200 || $result['httpCode'] === 204) {
+                    logActivity('update_client', '', ['client_id' => $clientId]);
+                    echo json_encode(['success' => true]);
+                } else {
+                    echo json_encode(['success' => false, 'error' => 'فشل في تحديث العميل']);
+                }
+                break;
+
+            case 'delete':
+                $clientId = trim($input['client_id'] ?? '');
+                if (!$clientId) {
+                    echo json_encode(['success' => false, 'error' => 'معرّف العميل مطلوب']);
+                    break;
+                }
+
+                $result = dbRequest('DELETE', '/pyra_clients?id=eq.' . rawurlencode($clientId));
+                if ($result['httpCode'] === 200 || $result['httpCode'] === 204) {
+                    logActivity('delete_client', '', ['client_id' => $clientId]);
+                    echo json_encode(['success' => true]);
+                } else {
+                    echo json_encode(['success' => false, 'error' => 'فشل في حذف العميل']);
+                }
+                break;
+
+            default:
+                echo json_encode(['success' => false, 'error' => 'عملية فرعية غير معروفة']);
+        }
+        break;
+
+    case 'manage_projects':
+        if (!isAdmin()) {
+            echo json_encode(['success' => false, 'error' => 'Admin access required']);
+            break;
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+            $result = dbRequest('GET', '/pyra_projects?order=updated_at.desc');
+            echo json_encode(['success' => true, 'projects' => $result['data'] ?? []]);
+            break;
+        }
+
+        $input = $jsonBody;
+        $sub = $input['sub_action'] ?? '';
+
+        switch ($sub) {
+            case 'create':
+                $name = trim($input['name'] ?? '');
+                $company = trim($input['company'] ?? '');
+                $storagePath = trim($input['storage_path'] ?? '');
+
+                if (!$name || !$company || !$storagePath) {
+                    echo json_encode(['success' => false, 'error' => 'اسم المشروع والشركة ومسار التخزين مطلوبون']);
+                    break;
+                }
+
+                $id = generatePortalId('prj');
+                $data = [
+                    'id' => $id,
+                    'name' => htmlspecialchars($name),
+                    'description' => htmlspecialchars(trim($input['description'] ?? '')),
+                    'client_company' => htmlspecialchars($company),
+                    'status' => $input['status'] ?? 'active',
+                    'start_date' => $input['start_date'] ?? null,
+                    'deadline' => $input['deadline'] ?? null,
+                    'storage_path' => sanitizePath($storagePath),
+                    'cover_image' => $input['cover_image'] ?? null,
+                    'created_by' => $_SESSION['user'] ?? 'admin'
+                ];
+
+                $result = dbRequest('POST', '/pyra_projects', $data, ['Prefer: return=representation']);
+                if ($result['httpCode'] === 201) {
+                    logActivity('create_project', $storagePath, ['project_name' => $name, 'company' => $company]);
+                    echo json_encode(['success' => true, 'project' => $result['data'][0] ?? $data]);
+                } else {
+                    echo json_encode(['success' => false, 'error' => $result['data']['message'] ?? 'فشل في إنشاء المشروع']);
+                }
+                break;
+
+            case 'update':
+                $projectId = trim($input['project_id'] ?? '');
+                if (!$projectId) {
+                    echo json_encode(['success' => false, 'error' => 'معرّف المشروع مطلوب']);
+                    break;
+                }
+
+                $update = [];
+                if (isset($input['name'])) $update['name'] = htmlspecialchars(trim($input['name']));
+                if (isset($input['description'])) $update['description'] = htmlspecialchars(trim($input['description']));
+                if (isset($input['status']) && in_array($input['status'], ['draft', 'active', 'in_progress', 'review', 'completed', 'archived'])) {
+                    $update['status'] = $input['status'];
+                }
+                if (isset($input['start_date'])) $update['start_date'] = $input['start_date'];
+                if (isset($input['deadline'])) $update['deadline'] = $input['deadline'];
+                if (isset($input['cover_image'])) $update['cover_image'] = $input['cover_image'];
+
+                if (empty($update)) {
+                    echo json_encode(['success' => false, 'error' => 'لا توجد بيانات للتحديث']);
+                    break;
+                }
+
+                $update['updated_at'] = date('c');
+                $result = dbRequest('PATCH', '/pyra_projects?id=eq.' . rawurlencode($projectId), $update);
+                if ($result['httpCode'] === 200 || $result['httpCode'] === 204) {
+                    logActivity('update_project', '', ['project_id' => $projectId]);
+
+                    // Notify clients if status changed
+                    if (isset($update['status'])) {
+                        $proj = dbRequest('GET', '/pyra_projects?id=eq.' . rawurlencode($projectId) . '&limit=1');
+                        if (!empty($proj['data'])) {
+                            $p = $proj['data'][0];
+                            $clients = dbRequest('GET', '/pyra_clients?company=eq.' . rawurlencode($p['client_company']) . '&status=eq.active&select=id');
+                            if (!empty($clients['data'])) {
+                                foreach ($clients['data'] as $c) {
+                                    dbRequest('POST', '/pyra_client_notifications', [
+                                        'id' => generatePortalId('cn'),
+                                        'client_id' => $c['id'],
+                                        'type' => 'project_status',
+                                        'title' => 'تحديث حالة المشروع: ' . htmlspecialchars($p['name']),
+                                        'message' => 'الحالة الجديدة: ' . $update['status'],
+                                        'target_project_id' => $projectId
+                                    ]);
+                                }
+                            }
+                        }
+                    }
+
+                    echo json_encode(['success' => true]);
+                } else {
+                    echo json_encode(['success' => false, 'error' => 'فشل في تحديث المشروع']);
+                }
+                break;
+
+            case 'delete':
+                $projectId = trim($input['project_id'] ?? '');
+                if (!$projectId) {
+                    echo json_encode(['success' => false, 'error' => 'معرّف المشروع مطلوب']);
+                    break;
+                }
+
+                $result = dbRequest('DELETE', '/pyra_projects?id=eq.' . rawurlencode($projectId));
+                if ($result['httpCode'] === 200 || $result['httpCode'] === 204) {
+                    logActivity('delete_project', '', ['project_id' => $projectId]);
+                    echo json_encode(['success' => true]);
+                } else {
+                    echo json_encode(['success' => false, 'error' => 'فشل في حذف المشروع']);
+                }
+                break;
+
+            default:
+                echo json_encode(['success' => false, 'error' => 'عملية فرعية غير معروفة']);
+        }
+        break;
+
+    case 'manage_project_files':
+        if (!isAdmin()) {
+            echo json_encode(['success' => false, 'error' => 'Admin access required']);
+            break;
+        }
+
+        $input = $jsonBody;
+        $projectId = trim($input['project_id'] ?? '');
+        $fileName = trim($input['file_name'] ?? '');
+        $filePath = trim($input['file_path'] ?? '');
+
+        if (!$projectId || !$fileName || !$filePath) {
+            echo json_encode(['success' => false, 'error' => 'بيانات الملف ناقصة']);
+            break;
+        }
+
+        // Verify project exists
+        $proj = dbRequest('GET', '/pyra_projects?id=eq.' . rawurlencode($projectId) . '&limit=1');
+        if ($proj['httpCode'] !== 200 || empty($proj['data'])) {
+            echo json_encode(['success' => false, 'error' => 'المشروع غير موجود']);
+            break;
+        }
+
+        $project = $proj['data'][0];
+        $needsApproval = !empty($input['needs_approval']);
+
+        $fileId = generatePortalId('pf');
+        $fileData = [
+            'id' => $fileId,
+            'project_id' => $projectId,
+            'file_name' => htmlspecialchars($fileName),
+            'file_path' => sanitizePath($filePath),
+            'file_size' => (int)($input['file_size'] ?? 0),
+            'mime_type' => $input['mime_type'] ?? null,
+            'category' => in_array($input['category'] ?? '', ['general', 'design', 'video', 'document', 'audio', 'other']) ? $input['category'] : 'general',
+            'version' => (int)($input['version'] ?? 1),
+            'needs_approval' => $needsApproval,
+            'uploaded_by' => $_SESSION['user'] ?? 'admin'
+        ];
+
+        $result = dbRequest('POST', '/pyra_project_files', $fileData, ['Prefer: return=representation']);
+        if ($result['httpCode'] !== 201) {
+            echo json_encode(['success' => false, 'error' => $result['data']['message'] ?? 'فشل في إضافة الملف']);
+            break;
+        }
+
+        logActivity('add_project_file', $filePath, ['project_id' => $projectId, 'file_name' => $fileName]);
+
+        // If needs_approval, create approval records for all primary clients of this company
+        if ($needsApproval) {
+            $clients = dbRequest('GET', '/pyra_clients?company=eq.' . rawurlencode($project['client_company'])
+                . '&role=eq.primary&status=eq.active&select=id');
+            if ($clients['httpCode'] === 200 && !empty($clients['data'])) {
+                foreach ($clients['data'] as $c) {
+                    dbRequest('POST', '/pyra_file_approvals', [
+                        'id' => generatePortalId('fa'),
+                        'file_id' => $fileId,
+                        'client_id' => $c['id'],
+                        'status' => 'pending'
+                    ]);
+                }
+            }
+        }
+
+        // Notify all active clients of this company
+        $allClients = dbRequest('GET', '/pyra_clients?company=eq.' . rawurlencode($project['client_company'])
+            . '&status=eq.active&select=id');
+        if ($allClients['httpCode'] === 200 && !empty($allClients['data'])) {
+            foreach ($allClients['data'] as $c) {
+                dbRequest('POST', '/pyra_client_notifications', [
+                    'id' => generatePortalId('cn'),
+                    'client_id' => $c['id'],
+                    'type' => 'new_file',
+                    'title' => 'ملف جديد: ' . htmlspecialchars($fileName),
+                    'message' => 'تم إضافة ملف جديد في مشروع ' . htmlspecialchars($project['name']),
+                    'target_project_id' => $projectId,
+                    'target_file_id' => $fileId
+                ]);
+            }
+        }
+
+        echo json_encode(['success' => true, 'file' => $result['data'][0] ?? $fileData]);
+        break;
+
+    case 'team_reply_to_client':
+        if (!isLoggedIn()) {
+            echo json_encode(['success' => false, 'error' => 'Not authenticated']);
+            break;
+        }
+
+        $input = $jsonBody;
+        $projectId = trim($input['project_id'] ?? '');
+        $text = trim($input['text'] ?? '');
+        $fileId = trim($input['file_id'] ?? '') ?: null;
+        $parentId = trim($input['parent_id'] ?? '') ?: null;
+
+        if (!$projectId || mb_strlen($text) < 3) {
+            echo json_encode(['success' => false, 'error' => 'معرّف المشروع والنص (3 حروف على الأقل) مطلوبان']);
+            break;
+        }
+
+        $commentId = generatePortalId('cc');
+        $sanitizedText = htmlspecialchars($text);
+        $displayName = $_SESSION['display_name'] ?? $_SESSION['user'] ?? 'Team';
+
+        $record = [
+            'id' => $commentId,
+            'project_id' => $projectId,
+            'file_id' => $fileId,
+            'author_type' => 'team',
+            'author_id' => $_SESSION['user'] ?? 'admin',
+            'author_name' => $displayName,
+            'text' => $sanitizedText,
+            'parent_id' => $parentId,
+            'is_read_by_client' => false,
+            'is_read_by_team' => true
+        ];
+
+        $result = dbRequest('POST', '/pyra_client_comments', $record, ['Prefer: return=representation']);
+        if ($result['httpCode'] === 201) {
+            logActivity('team_reply_comment', '', ['project_id' => $projectId]);
+
+            // Notify clients of this company
+            $proj = dbRequest('GET', '/pyra_projects?id=eq.' . rawurlencode($projectId) . '&limit=1');
+            if (!empty($proj['data'])) {
+                $p = $proj['data'][0];
+                $clients = dbRequest('GET', '/pyra_clients?company=eq.' . rawurlencode($p['client_company']) . '&status=eq.active&select=id');
+                if (!empty($clients['data'])) {
+                    foreach ($clients['data'] as $c) {
+                        dbRequest('POST', '/pyra_client_notifications', [
+                            'id' => generatePortalId('cn'),
+                            'client_id' => $c['id'],
+                            'type' => 'comment_reply',
+                            'title' => 'رد جديد من الفريق',
+                            'message' => mb_substr($sanitizedText, 0, 100),
+                            'target_project_id' => $projectId
+                        ]);
+                    }
+                }
+            }
+
+            $comment = (is_array($result['data']) && !empty($result['data'])) ? $result['data'][0] : $record;
+            echo json_encode(['success' => true, 'comment' => $comment]);
+        } else {
+            echo json_encode(['success' => false, 'error' => 'فشل في إضافة الرد']);
+        }
+        break;
+
+    case 'getClientComments':
+        if (!isLoggedIn()) {
+            echo json_encode(['success' => false, 'error' => 'Not authenticated']);
+            break;
+        }
+
+        $projectId = $_GET['project_id'] ?? '';
+        if (!$projectId) {
+            echo json_encode(['success' => false, 'error' => 'معرّف المشروع مطلوب']);
+            break;
+        }
+
+        $endpoint = '/pyra_client_comments?project_id=eq.' . rawurlencode($projectId) . '&order=created_at.asc';
+        $result = dbRequest('GET', $endpoint);
+        $comments = ($result['httpCode'] === 200 && is_array($result['data'])) ? $result['data'] : [];
+
+        // Build threaded structure
+        $threaded = [];
+        $byId = [];
+        foreach ($comments as $c) {
+            $c['replies'] = [];
+            $byId[$c['id']] = $c;
+        }
+        foreach ($byId as $id => $c) {
+            if (!empty($c['parent_id']) && isset($byId[$c['parent_id']])) {
+                $byId[$c['parent_id']]['replies'][] = &$byId[$id];
+            } else {
+                $threaded[] = &$byId[$id];
+            }
+        }
+
+        // Mark client comments as read by team
+        dbRequest('PATCH', '/pyra_client_comments?project_id=eq.' . rawurlencode($projectId)
+            . '&author_type=eq.client&is_read_by_team=eq.false', [
+            'is_read_by_team' => true
+        ]);
+
+        echo json_encode(['success' => true, 'comments' => $threaded]);
+        break;
+
     default:
         echo json_encode(['error' => 'Invalid action']);
         break;

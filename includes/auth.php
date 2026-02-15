@@ -1373,3 +1373,111 @@ function getUserFavoritePaths(string $username): array {
 function cleanupDeletedFavorites(string $filePath): void {
     dbRequest('DELETE', '/pyra_favorites?file_path=eq.' . rawurlencode($filePath));
 }
+
+// ============================================
+// Client Portal Authentication
+// ============================================
+
+function isClientLoggedIn(): bool {
+    return isset($_SESSION['client_id']) && !empty($_SESSION['client_id']);
+}
+
+function getClientData(): ?array {
+    if (!isClientLoggedIn()) return null;
+
+    $result = dbRequest('GET', '/pyra_clients?id=eq.' . rawurlencode($_SESSION['client_id']) . '&limit=1');
+    if ($result['httpCode'] !== 200 || !is_array($result['data']) || empty($result['data'])) {
+        unset($_SESSION['client_id'], $_SESSION['client_email'], $_SESSION['client_name'], $_SESSION['client_company'], $_SESSION['client_role'], $_SESSION['client_csrf_token']);
+        return null;
+    }
+
+    $client = $result['data'][0];
+    if (($client['status'] ?? '') !== 'active') {
+        unset($_SESSION['client_id'], $_SESSION['client_email'], $_SESSION['client_name'], $_SESSION['client_company'], $_SESSION['client_role'], $_SESSION['client_csrf_token']);
+        return null;
+    }
+
+    return [
+        'id' => $client['id'],
+        'name' => $client['name'],
+        'email' => $client['email'],
+        'company' => $client['company'],
+        'role' => $client['role'],
+        'phone' => $client['phone'] ?? '',
+        'language' => $client['language'] ?? 'ar',
+        'avatar_url' => $client['avatar_url'] ?? null,
+        'csrf_token' => $_SESSION['client_csrf_token'] ?? ''
+    ];
+}
+
+function requireClientAuth(): array {
+    if (!isClientLoggedIn()) {
+        http_response_code(401);
+        echo json_encode(['error' => 'غير مصرّح. سجّل الدخول أولاً']);
+        exit;
+    }
+    $client = getClientData();
+    if (!$client) {
+        http_response_code(401);
+        echo json_encode(['error' => 'الجلسة منتهية. سجّل الدخول مرة أخرى']);
+        exit;
+    }
+    return $client;
+}
+
+function validateClientCsrf(): void {
+    $token = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+    if (!$token || !hash_equals($_SESSION['client_csrf_token'] ?? '', $token)) {
+        http_response_code(403);
+        echo json_encode(['error' => 'رمز الأمان غير صالح. حدّث الصفحة']);
+        exit;
+    }
+}
+
+function isClientAccountLocked(string $email): array {
+    $lockoutMinutes = 15;
+    $maxFailed = 5;
+    $since = date('c', time() - ($lockoutMinutes * 60));
+    $identifier = 'client:' . $email;
+
+    $result = dbRequest('GET', '/pyra_login_attempts?username=eq.' . rawurlencode($identifier)
+        . '&success=eq.false&attempted_at=gte.' . rawurlencode($since)
+        . '&order=attempted_at.desc&limit=' . $maxFailed);
+
+    if ($result['httpCode'] === 200 && is_array($result['data']) && count($result['data']) >= $maxFailed) {
+        $lastAttempt = strtotime($result['data'][0]['attempted_at']);
+        $unlockAt = $lastAttempt + ($lockoutMinutes * 60);
+        $remainingSec = $unlockAt - time();
+        if ($remainingSec > 0) {
+            return ['locked' => true, 'remaining_minutes' => (int)ceil($remainingSec / 60)];
+        }
+    }
+    return ['locked' => false];
+}
+
+function recordClientLoginAttempt(string $email, string $ip, bool $success): void {
+    dbRequest('POST', '/pyra_login_attempts', [
+        'username' => 'client:' . $email,
+        'ip_address' => $ip,
+        'success' => $success
+    ]);
+}
+
+function sendClientEmail(string $to, string $subject, string $htmlBody): bool {
+    try {
+        $headers = "MIME-Version: 1.0\r\n";
+        $headers .= "Content-type: text/html; charset=UTF-8\r\n";
+        $headers .= "From: Pyra Workspace <noreply@pyramedia.info>\r\n";
+        return mail($to, $subject, $htmlBody, $headers);
+    } catch (\Throwable $e) {
+        return false;
+    }
+}
+
+function generateClientId(): string {
+    return 'c_' . time() . '_' . substr(bin2hex(random_bytes(4)), 0, 4);
+}
+
+function generatePortalId(string $prefix = 'p'): string {
+    return $prefix . '_' . time() . '_' . substr(bin2hex(random_bytes(4)), 0, 4);
+}
