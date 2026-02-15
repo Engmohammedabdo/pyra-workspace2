@@ -1,7 +1,7 @@
 /**
  * Pyra Workspace — Client Portal App
  * Frontend controller for the client portal
- * Phase 6: Notifications + Comments + Profile
+ * Phase 7: Email Notifications + Profile Enhancement
  */
 const PortalApp = {
 
@@ -1681,6 +1681,41 @@ const PortalApp = {
                         </div>
                     </div>
 
+                    <!-- Non-editable fields with lock icons -->
+                    <div class="portal-profile-card">
+                        <h4 class="portal-section-title">
+                            <i data-lucide="info" style="width:16px;height:16px"></i>
+                            معلومات الحساب
+                        </h4>
+                        <div class="portal-profile-locked-fields">
+                            <div class="portal-locked-field">
+                                <label class="portal-form-label">البريد الإلكتروني</label>
+                                <div class="portal-locked-value">
+                                    <span dir="ltr">${this.escHtml(c.email)}</span>
+                                    <i data-lucide="lock" class="portal-lock-icon"></i>
+                                </div>
+                            </div>
+                            <div class="portal-locked-field">
+                                <label class="portal-form-label">الشركة</label>
+                                <div class="portal-locked-value">
+                                    <span>${this.escHtml(c.company)}</span>
+                                    <i data-lucide="lock" class="portal-lock-icon"></i>
+                                </div>
+                            </div>
+                            <div class="portal-locked-field">
+                                <label class="portal-form-label">الصلاحية</label>
+                                <div class="portal-locked-value">
+                                    <span>${c.role === 'primary' ? 'المسؤول الرئيسي' : 'مشاهد'}</span>
+                                    <i data-lucide="lock" class="portal-lock-icon"></i>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="portal-locked-hint">
+                            <i data-lucide="info" style="width:12px;height:12px"></i>
+                            هذه البيانات يتم تعديلها عن طريق فريق العمل فقط
+                        </p>
+                    </div>
+
                     <div class="portal-profile-card">
                         <h4 class="portal-section-title">
                             <i data-lucide="edit-3" style="width:16px;height:16px"></i>
@@ -1721,8 +1756,15 @@ const PortalApp = {
                             </div>
                             <div class="portal-form-group">
                                 <label class="portal-form-label">كلمة المرور الجديدة</label>
-                                <input type="password" class="portal-input" id="newPassword" minlength="8" required dir="ltr">
-                                <span class="portal-form-hint">8 حروف على الأقل</span>
+                                <div class="portal-pw-strength-wrap">
+                                    <input type="password" class="portal-input portal-pw-input" id="newPassword" minlength="8" required dir="ltr"
+                                        oninput="PortalApp.updatePwStrength(this.value)">
+                                    <div class="portal-pw-strength-bar" id="pwStrengthBar">
+                                        <div class="portal-pw-strength-fill" id="pwStrengthFill"></div>
+                                    </div>
+                                    <span class="portal-pw-strength-label" id="pwStrengthLabel"></span>
+                                </div>
+                                <span class="portal-form-hint">8 حروف على الأقل — الأفضل استخدام أحرف وأرقام ورموز</span>
                             </div>
                             <div class="portal-form-group">
                                 <label class="portal-form-label">تأكيد كلمة المرور الجديدة</label>
@@ -1752,6 +1794,35 @@ const PortalApp = {
         }
     },
 
+    // ============ Password Strength Indicator ============
+    updatePwStrength(pw) {
+        const fill = document.getElementById('pwStrengthFill');
+        const label = document.getElementById('pwStrengthLabel');
+        if (!fill || !label) return;
+
+        let score = 0;
+        if (pw.length >= 8) score++;
+        if (pw.length >= 12) score++;
+        if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
+        if (/\d/.test(pw)) score++;
+        if (/[^A-Za-z0-9]/.test(pw)) score++;
+
+        const levels = [
+            { pct: '0%',   color: 'transparent',  text: '' },
+            { pct: '20%',  color: '#ef4444',       text: 'ضعيفة جداً' },
+            { pct: '40%',  color: '#f97316',       text: 'ضعيفة' },
+            { pct: '60%',  color: '#eab308',       text: 'متوسطة' },
+            { pct: '80%',  color: '#22c55e',       text: 'قوية' },
+            { pct: '100%', color: '#10b981',       text: 'قوية جداً' }
+        ];
+
+        const lv = pw.length === 0 ? levels[0] : levels[Math.min(score, 5)];
+        fill.style.width = lv.pct;
+        fill.style.background = lv.color;
+        label.textContent = lv.text;
+        label.style.color = lv.color;
+    },
+
     async updateProfile() {
         const name = document.getElementById('profileName')?.value.trim();
         const phone = document.getElementById('profilePhone')?.value.trim();
@@ -1774,6 +1845,17 @@ const PortalApp = {
 
             if (data.success) {
                 this.toast('تم تحديث البيانات بنجاح ✓', 'success');
+                // Show success checkmark on button
+                if (btn) {
+                    btn.innerHTML = '<i data-lucide="check-circle" style="width:16px;height:16px"></i> تم الحفظ';
+                    btn.classList.add('portal-btn--success');
+                    if (typeof lucide !== 'undefined') lucide.createIcons();
+                    setTimeout(() => {
+                        btn.innerHTML = '<i data-lucide="save" style="width:16px;height:16px"></i> حفظ التغييرات';
+                        btn.classList.remove('portal-btn--success');
+                        if (typeof lucide !== 'undefined') lucide.createIcons();
+                    }, 2000);
+                }
                 // Update header name
                 const nameEl = document.querySelector('.portal-user-name');
                 if (nameEl) nameEl.textContent = name;
@@ -1825,6 +1907,19 @@ const PortalApp = {
                 document.getElementById('currentPassword').value = '';
                 document.getElementById('newPassword').value = '';
                 document.getElementById('confirmPassword').value = '';
+                // Reset strength indicator
+                this.updatePwStrength('');
+                // Show success checkmark on button
+                if (btn) {
+                    btn.innerHTML = '<i data-lucide="check-circle" style="width:16px;height:16px"></i> تم التغيير';
+                    btn.classList.add('portal-btn--success');
+                    if (typeof lucide !== 'undefined') lucide.createIcons();
+                    setTimeout(() => {
+                        btn.innerHTML = '<i data-lucide="key" style="width:16px;height:16px"></i> تغيير كلمة المرور';
+                        btn.classList.remove('portal-btn--success');
+                        if (typeof lucide !== 'undefined') lucide.createIcons();
+                    }, 2000);
+                }
             } else {
                 this.toast(data.error || 'حدث خطأ', 'error');
             }

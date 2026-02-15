@@ -162,14 +162,16 @@ if ($action) {
 
         sendClientEmail(
             $clientRow['email'],
-            'إعادة تعيين كلمة المرور — Pyra Workspace',
-            '<div dir="rtl" style="font-family:Cairo,Arial,sans-serif;max-width:500px;margin:0 auto;padding:20px">'
-            . '<h2>إعادة تعيين كلمة المرور</h2>'
-            . '<p>مرحباً ' . htmlspecialchars($clientRow['name']) . '،</p>'
-            . '<p>اضغط على الرابط لإعادة تعيين كلمة المرور:</p>'
-            . '<p><a href="' . htmlspecialchars($resetUrl) . '" style="background:#8b5cf6;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;display:inline-block">إعادة التعيين</a></p>'
-            . '<p style="color:#888;font-size:13px">ينتهي هذا الرابط بعد ساعة واحدة.</p>'
-            . '</div>'
+            'إعادة تعيين كلمة المرور — Pyramedia Portal',
+            getEmailTemplate(
+                'إعادة تعيين كلمة المرور',
+                'مرحباً <strong>' . htmlspecialchars($clientRow['name']) . '</strong>،<br><br>'
+                . 'تم طلب إعادة تعيين كلمة المرور لحسابك.<br>'
+                . 'اضغط على الزر أدناه لإنشاء كلمة مرور جديدة.<br><br>'
+                . '<span style="color:#505c74;font-size:13px;">ينتهي هذا الرابط بعد ساعة واحدة. إذا لم تطلب هذا، تجاهل هذه الرسالة.</span>',
+                $resetUrl,
+                'إعادة تعيين كلمة المرور'
+            )
         );
 
         echo json_encode(['success' => true, 'message' => 'إذا كان البريد مسجّل، ستصلك رسالة لإعادة تعيين كلمة المرور']);

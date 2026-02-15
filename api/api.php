@@ -1904,6 +1904,24 @@ switch ($action) {
                         'message' => 'تم إنشاء حسابك بنجاح. يمكنك الآن تصفح مشاريعك ومتابعة الملفات.'
                     ]);
 
+                    // Send welcome email (fire-and-forget)
+                    $portalUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http')
+                        . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost')
+                        . dirname(dirname($_SERVER['SCRIPT_NAME'])) . '/portal/';
+                    sendClientEmail(
+                        $email,
+                        'مرحباً في Pyramedia Portal — حسابك جاهز',
+                        getEmailTemplate(
+                            'مرحباً بك في Pyramedia Portal',
+                            'مرحباً <strong>' . htmlspecialchars($name) . '</strong>،<br><br>'
+                            . 'تم إنشاء حسابك بنجاح. يمكنك الآن تسجيل الدخول والوصول إلى مشاريعك ومتابعة الملفات.<br><br>'
+                            . '<strong>البريد:</strong> ' . htmlspecialchars($email) . '<br>'
+                            . '<strong>كلمة المرور:</strong> تم إرسالها من قبل المسؤول',
+                            $portalUrl,
+                            'دخول البوابة'
+                        )
+                    );
+
                     $clientData = $result['data'][0] ?? $data;
                     unset($clientData['password_hash']);
                     echo json_encode(['success' => true, 'client' => $clientData]);
@@ -2153,10 +2171,14 @@ switch ($action) {
             }
         }
 
-        // Notify all active clients of this company
+        // Notify all active clients of this company + email for approval files
         $allClients = dbRequest('GET', '/pyra_clients?company=eq.' . rawurlencode($project['client_company'])
-            . '&status=eq.active&select=id');
+            . '&status=eq.active&select=id,email,name,role');
         if ($allClients['httpCode'] === 200 && !empty($allClients['data'])) {
+            $portalUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http')
+                . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost')
+                . dirname(dirname($_SERVER['SCRIPT_NAME'])) . '/portal/';
+
             foreach ($allClients['data'] as $c) {
                 dbRequest('POST', '/pyra_client_notifications', [
                     'id' => generatePortalId('cn'),
@@ -2167,6 +2189,22 @@ switch ($action) {
                     'target_project_id' => $projectId,
                     'target_file_id' => $fileId
                 ]);
+
+                // Email primary clients when file needs approval (fire-and-forget)
+                if ($needsApproval && ($c['role'] ?? '') === 'primary' && !empty($c['email'])) {
+                    sendClientEmail(
+                        $c['email'],
+                        'ملف جديد بانتظار موافقتك — ' . htmlspecialchars($project['name']),
+                        getEmailTemplate(
+                            'ملف جديد يحتاج موافقتك',
+                            'مرحباً <strong>' . htmlspecialchars($c['name'] ?? '') . '</strong>،<br><br>'
+                            . 'تم رفع ملف جديد في مشروع <strong>' . htmlspecialchars($project['name']) . '</strong> ويحتاج موافقتك.<br><br>'
+                            . '📄 <strong>' . htmlspecialchars($fileName) . '</strong>',
+                            $portalUrl . '#file_preview/' . urlencode($fileId),
+                            'عرض الملف والموافقة'
+                        )
+                    );
+                }
             }
         }
 
@@ -2215,8 +2253,12 @@ switch ($action) {
             $proj = dbRequest('GET', '/pyra_projects?id=eq.' . rawurlencode($projectId) . '&limit=1');
             if (!empty($proj['data'])) {
                 $p = $proj['data'][0];
-                $clients = dbRequest('GET', '/pyra_clients?company=eq.' . rawurlencode($p['client_company']) . '&status=eq.active&select=id');
+                $clients = dbRequest('GET', '/pyra_clients?company=eq.' . rawurlencode($p['client_company']) . '&status=eq.active&select=id,email,name');
                 if (!empty($clients['data'])) {
+                    $portalUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http')
+                        . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost')
+                        . dirname(dirname($_SERVER['SCRIPT_NAME'])) . '/portal/';
+
                     foreach ($clients['data'] as $c) {
                         dbRequest('POST', '/pyra_client_notifications', [
                             'id' => generatePortalId('cn'),
@@ -2226,6 +2268,22 @@ switch ($action) {
                             'message' => mb_substr($sanitizedText, 0, 100),
                             'target_project_id' => $projectId
                         ]);
+
+                        // Email notification (fire-and-forget)
+                        if (!empty($c['email'])) {
+                            sendClientEmail(
+                                $c['email'],
+                                'رد جديد على تعليقك — ' . htmlspecialchars($p['name']),
+                                getEmailTemplate(
+                                    'رد جديد من الفريق',
+                                    'مرحباً <strong>' . htmlspecialchars($c['name'] ?? '') . '</strong>،<br><br>'
+                                    . '<strong>' . htmlspecialchars($displayName) . '</strong> رد على تعليقك في مشروع <strong>' . htmlspecialchars($p['name']) . '</strong>:<br><br>'
+                                    . '<em style="color:#8892a8;">"' . htmlspecialchars(mb_substr($text, 0, 150)) . '"</em>',
+                                    $portalUrl . '#project_detail/' . urlencode($projectId),
+                                    'عرض التعليق'
+                                )
+                            );
+                        }
                     }
                 }
             }

@@ -1463,15 +1463,203 @@ function recordClientLoginAttempt(string $email, string $ip, bool $success): voi
     ]);
 }
 
+/**
+ * Send email to client.
+ * Uses SMTP via fsockopen if SMTP constants are defined in config.php,
+ * otherwise falls back to PHP mail(). Failure never breaks the caller.
+ */
 function sendClientEmail(string $to, string $subject, string $htmlBody): bool {
     try {
-        $headers = "MIME-Version: 1.0\r\n";
-        $headers .= "Content-type: text/html; charset=UTF-8\r\n";
-        $headers .= "From: Pyra Workspace <noreply@pyramedia.info>\r\n";
-        return mail($to, $subject, $htmlBody, $headers);
+        // Determine sender
+        $fromEmail = defined('SMTP_FROM_EMAIL') ? SMTP_FROM_EMAIL : 'noreply@pyramedia.info';
+        $fromName  = defined('SMTP_FROM_NAME')  ? SMTP_FROM_NAME  : 'Pyra Workspace';
+
+        // If SMTP is configured, use fsockopen
+        if (defined('SMTP_HOST') && defined('SMTP_USER') && defined('SMTP_PASS')) {
+            return _sendSmtpEmail($to, $subject, $htmlBody, $fromEmail, $fromName);
+        }
+
+        // Fallback to PHP mail()
+        $headers  = "MIME-Version: 1.0\r\n";
+        $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
+        $headers .= "From: {$fromName} <{$fromEmail}>\r\n";
+        $headers .= "Reply-To: info@pyramedia.info\r\n";
+        return @mail($to, $subject, $htmlBody, $headers);
     } catch (\Throwable $e) {
+        _logEmailError($to, $subject, $e->getMessage());
         return false;
     }
+}
+
+/**
+ * SMTP email via fsockopen (SSL). No external libraries needed.
+ */
+function _sendSmtpEmail(string $to, string $subject, string $body, string $fromEmail, string $fromName): bool {
+    $host = SMTP_HOST;
+    $port = defined('SMTP_PORT') ? (int) SMTP_PORT : 465;
+    $user = SMTP_USER;
+    $pass = SMTP_PASS;
+    $useSSL = $port === 465;
+
+    try {
+        $prefix = $useSSL ? 'ssl://' : '';
+        $sock = @fsockopen($prefix . $host, $port, $errno, $errstr, 10);
+        if (!$sock) {
+            _logEmailError($to, $subject, "SMTP connect failed: {$errstr} ({$errno})");
+            return false;
+        }
+
+        stream_set_timeout($sock, 15);
+
+        // Helper to send command and read response
+        $send = function(string $cmd) use ($sock): string {
+            fwrite($sock, $cmd . "\r\n");
+            return fgets($sock, 512) ?: '';
+        };
+        $read = function() use ($sock): string {
+            return fgets($sock, 512) ?: '';
+        };
+
+        $read(); // read greeting
+        $send('EHLO pyramedia.info');
+        // Read multiline EHLO response
+        $ehloResp = '';
+        while ($line = fgets($sock, 512)) {
+            $ehloResp .= $line;
+            if (isset($line[3]) && $line[3] === ' ') break;
+        }
+
+        // STARTTLS for non-SSL connections on port 587
+        if (!$useSSL && $port === 587 && strpos($ehloResp, 'STARTTLS') !== false) {
+            $send('STARTTLS');
+            stream_socket_enable_crypto($sock, true, STREAM_CRYPTO_METHOD_TLS_CLIENT);
+            $send('EHLO pyramedia.info');
+            while ($line = fgets($sock, 512)) {
+                if (isset($line[3]) && $line[3] === ' ') break;
+            }
+        }
+
+        // AUTH LOGIN
+        $send('AUTH LOGIN');
+        $send(base64_encode($user));
+        $send(base64_encode($pass));
+
+        $send("MAIL FROM:<{$fromEmail}>");
+        $send("RCPT TO:<{$to}>");
+        $resp = $send('DATA');
+
+        // Build RFC 2822 email
+        $boundary = md5(uniqid(time()));
+        $message  = "From: {$fromName} <{$fromEmail}>\r\n";
+        $message .= "To: {$to}\r\n";
+        $message .= "Subject: =?UTF-8?B?" . base64_encode($subject) . "?=\r\n";
+        $message .= "MIME-Version: 1.0\r\n";
+        $message .= "Content-Type: text/html; charset=UTF-8\r\n";
+        $message .= "Content-Transfer-Encoding: base64\r\n";
+        $message .= "\r\n";
+        $message .= chunk_split(base64_encode($body));
+        $message .= "\r\n.\r\n";
+
+        fwrite($sock, $message);
+        $dataResp = $read();
+
+        $send('QUIT');
+        fclose($sock);
+
+        // Check if message was accepted (2xx response)
+        $success = strpos($dataResp, '250') !== false || strpos($dataResp, '2') === 0;
+        if (!$success) {
+            _logEmailError($to, $subject, "SMTP data response: {$dataResp}");
+        }
+        return $success;
+    } catch (\Throwable $e) {
+        _logEmailError($to, $subject, $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Log email errors silently via logActivity if available.
+ */
+function _logEmailError(string $to, string $subject, string $error): void {
+    if (function_exists('logActivity')) {
+        logActivity('email_error', '', [
+            'to' => $to,
+            'subject' => mb_substr($subject, 0, 50),
+            'error' => mb_substr($error, 0, 200)
+        ]);
+    }
+}
+
+/**
+ * Build branded RTL HTML email template.
+ * @param string $title  — Main heading
+ * @param string $message — Body text (supports basic HTML: <br>, <strong>)
+ * @param string $actionUrl — Button link URL
+ * @param string $actionText — Button label
+ * @return string — Full HTML email
+ */
+function getEmailTemplate(string $title, string $message, string $actionUrl = '', string $actionText = ''): string {
+    $brandName = 'Pyramedia';
+    $brandColor = '#F97316';
+    $bgDark = '#0a0e14';
+    $bgCard = '#111620';
+    $textPrimary = '#edf0f7';
+    $textSecondary = '#8892a8';
+    $borderColor = 'rgba(249,115,22,0.2)';
+
+    $actionBtn = '';
+    if ($actionUrl && $actionText) {
+        $actionBtn = '
+            <div style="text-align:center;margin:30px 0;">
+                <a href="' . htmlspecialchars($actionUrl) . '"
+                   style="background:' . $brandColor . ';color:#ffffff;padding:14px 32px;border-radius:10px;
+                          text-decoration:none;font-weight:bold;font-size:15px;display:inline-block;
+                          font-family:Cairo,Arial,sans-serif;">
+                    ' . htmlspecialchars($actionText) . '
+                </a>
+            </div>';
+    }
+
+    return '<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>' . htmlspecialchars($title) . '</title>
+</head>
+<body style="margin:0;padding:0;font-family:Cairo,\'Segoe UI\',Tahoma,Arial,sans-serif;background:' . $bgDark . ';color:' . $textPrimary . ';">
+    <div style="max-width:600px;margin:0 auto;padding:40px 20px;">
+        <!-- Card -->
+        <div style="background:' . $bgCard . ';border-radius:16px;padding:40px 32px;border:1px solid ' . $borderColor . ';box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+            <!-- Logo -->
+            <div style="text-align:center;margin-bottom:32px;">
+                <span style="color:' . $brandColor . ';font-size:28px;font-weight:800;letter-spacing:-0.02em;">' . $brandName . '</span>
+                <div style="width:40px;height:2px;background:' . $brandColor . ';margin:12px auto 0;border-radius:1px;opacity:0.5;"></div>
+            </div>
+            <!-- Title -->
+            <h2 style="color:' . $textPrimary . ';font-size:20px;font-weight:700;margin:0 0 16px;text-align:center;line-height:1.5;">
+                ' . htmlspecialchars($title) . '
+            </h2>
+            <!-- Message -->
+            <div style="color:' . $textSecondary . ';font-size:15px;line-height:1.8;text-align:center;margin-bottom:8px;">
+                ' . $message . '
+            </div>
+            ' . $actionBtn . '
+        </div>
+        <!-- Footer -->
+        <div style="text-align:center;margin-top:24px;">
+            <p style="color:#505c74;font-size:12px;margin:0;">
+                ' . $brandName . ' Workspace &mdash;
+                <a href="https://pyramedia.info" style="color:#505c74;text-decoration:underline;">pyramedia.info</a>
+            </p>
+            <p style="color:#3a3f4c;font-size:11px;margin:8px 0 0;">
+                هذه الرسالة أُرسلت تلقائياً. لا تحتاج للرد عليها.
+            </p>
+        </div>
+    </div>
+</body>
+</html>';
 }
 
 function generateClientId(): string {
