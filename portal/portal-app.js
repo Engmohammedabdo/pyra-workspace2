@@ -1,7 +1,7 @@
 /**
  * Pyra Workspace — Client Portal App
  * Frontend controller for the client portal
- * Phase 4: Dashboard + Projects + Navigation + Browser History
+ * Phase 5: Project Detail + File Preview + Approvals
  */
 const PortalApp = {
 
@@ -609,44 +609,590 @@ const PortalApp = {
         `;
     },
 
-    // ============ Project Detail (stub) ============
+    // ============ Project Detail Skeleton ============
+    _projectDetailSkeleton() {
+        return `
+            <div class="portal-project-detail">
+                <div class="portal-skeleton" style="height:18px;width:100px;margin-bottom:20px"></div>
+                <div class="portal-detail-hero portal-skeleton-card">
+                    <div class="portal-skeleton" style="height:28px;width:240px;margin-bottom:10px"></div>
+                    <div class="portal-skeleton" style="height:16px;width:180px;margin-bottom:16px"></div>
+                    <div class="portal-skeleton" style="height:4px;width:100%;border-radius:2px"></div>
+                </div>
+                <div class="portal-skeleton" style="height:40px;width:100%;margin:20px 0;border-radius:20px"></div>
+                <div class="portal-file-grid">
+                    ${[1,2,3,4].map(() => `
+                        <div class="portal-file-card portal-skeleton-card">
+                            <div class="portal-skeleton" style="height:56px;width:56px;border-radius:12px"></div>
+                            <div style="flex:1">
+                                <div class="portal-skeleton" style="height:16px;width:70%;margin-bottom:8px"></div>
+                                <div class="portal-skeleton" style="height:12px;width:50%"></div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    },
+
+    // ============ Project Detail ============
     async renderProjectDetail(projectId) {
         const main = document.getElementById('portalMain');
-        main.innerHTML = '<div class="portal-loading"><div class="portal-spinner"></div></div>';
+        main.innerHTML = this._projectDetailSkeleton();
         this.currentProject = projectId;
+        this._currentFileCategory = 'all';
+        this._currentApprovalFilter = 'all';
+
+        try {
+            const res = await this.apiFetch(`?action=client_project_detail&project_id=${encodeURIComponent(projectId)}`);
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+
+            this._projectData = data;
+            this._renderProjectDetailView(data);
+        } catch (err) {
+            main.innerHTML = `
+                <div class="portal-error-state">
+                    <button class="portal-back-btn" onclick="PortalApp.showScreen('projects')">
+                        <i data-lucide="arrow-right"></i> رجوع للمشاريع
+                    </button>
+                    <div class="portal-error-icon"><i data-lucide="alert-triangle"></i></div>
+                    <h3>خطأ في تحميل المشروع</h3>
+                    <p>${this.escHtml(err.message)}</p>
+                    <button class="portal-btn-retry" onclick="PortalApp.renderProjectDetail('${this.escAttr(projectId)}')">
+                        <i data-lucide="refresh-cw"></i> إعادة المحاولة
+                    </button>
+                </div>
+            `;
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+    },
+
+    _renderProjectDetailView(data) {
+        const main = document.getElementById('portalMain');
+        const p = data.project;
+        const files = data.files || [];
+
+        // Progress calculation
+        const totalApproval = p.approved_files + p.pending_files + p.revision_files;
+        const progressPct = totalApproval > 0 ? Math.round((p.approved_files / totalApproval) * 100) : 0;
+
+        // Category filter tabs
+        const categories = [
+            { key: 'all', label: 'الكل', icon: 'layers' },
+            { key: 'design', label: 'تصاميم', icon: 'image' },
+            { key: 'video', label: 'فيديو', icon: 'video' },
+            { key: 'document', label: 'مستندات', icon: 'file-text' },
+            { key: 'audio', label: 'صوت', icon: 'music' }
+        ];
+
+        // Approval filter
+        const approvalFilters = [
+            { key: 'all', label: 'الكل' },
+            { key: 'pending', label: 'بانتظار الموافقة' },
+            { key: 'approved', label: 'تمت الموافقة' },
+            { key: 'revision_requested', label: 'طلب تعديل' }
+        ];
+
+        const catFilter = this._currentFileCategory || 'all';
+        const appFilter = this._currentApprovalFilter || 'all';
+
+        // Client-side filtering
+        let filteredFiles = files;
+        if (catFilter !== 'all') {
+            filteredFiles = filteredFiles.filter(f => f.category === catFilter);
+        }
+        if (appFilter !== 'all') {
+            filteredFiles = filteredFiles.filter(f => (f.approval_status || '') === appFilter);
+        }
+
         main.innerHTML = `
-            <div class="portal-stub-screen">
+            <div class="portal-project-detail">
                 <button class="portal-back-btn" onclick="PortalApp.showScreen('projects')">
                     <i data-lucide="arrow-right"></i> رجوع للمشاريع
                 </button>
-                <div class="portal-empty-state">
-                    <div class="portal-empty-icon"><i data-lucide="folder-open"></i></div>
-                    <h3>تفاصيل المشروع</h3>
-                    <p>هذه الشاشة قيد التطوير — سيتم إضافتها في المرحلة القادمة</p>
+
+                <div class="portal-detail-hero">
+                    <div class="portal-detail-hero-content">
+                        <div class="portal-detail-title-row">
+                            <h1>${this.escHtml(p.name)}</h1>
+                            <span class="portal-status-badge status-${this.escAttr(p.status)}">${this.statusLabel(p.status)}</span>
+                        </div>
+                        ${p.description ? `<p class="portal-detail-desc">${this.escHtml(p.description)}</p>` : ''}
+                        <div class="portal-detail-meta">
+                            ${p.start_date ? `<span class="portal-meta-item"><i data-lucide="calendar" style="width:15px;height:15px"></i> بداية: ${this.formatDate(p.start_date)}</span>` : ''}
+                            ${p.deadline ? `<span class="portal-meta-item"><i data-lucide="calendar-clock" style="width:15px;height:15px"></i> التسليم: ${this.formatDate(p.deadline)}</span>` : ''}
+                            <span class="portal-meta-item"><i data-lucide="file" style="width:15px;height:15px"></i> ${p.total_files} ملف</span>
+                        </div>
+                    </div>
+                    ${totalApproval > 0 ? `
+                        <div class="portal-detail-progress-section">
+                            <div class="portal-detail-progress-stats">
+                                <span class="portal-detail-progress-label">تقدّم الموافقات</span>
+                                <span class="portal-detail-progress-pct">${progressPct}%</span>
+                            </div>
+                            <div class="portal-progress-bar-wrap">
+                                <div class="portal-progress-bar" style="width:${progressPct}%"></div>
+                            </div>
+                            <div class="portal-detail-approval-summary">
+                                <span class="portal-approval-stat portal-approval-stat--approved">
+                                    <i data-lucide="check-circle" style="width:14px;height:14px"></i> ${p.approved_files} مُوافق
+                                </span>
+                                <span class="portal-approval-stat portal-approval-stat--pending">
+                                    <i data-lucide="clock" style="width:14px;height:14px"></i> ${p.pending_files} بانتظار
+                                </span>
+                                ${p.revision_files > 0 ? `
+                                    <span class="portal-approval-stat portal-approval-stat--revision">
+                                        <i data-lucide="edit-3" style="width:14px;height:14px"></i> ${p.revision_files} تعديل
+                                    </span>
+                                ` : ''}
+                            </div>
+                        </div>
+                    ` : ''}
                 </div>
+
+                <div class="portal-detail-filters">
+                    <div class="portal-filter-tabs">
+                        ${categories.map(c => `
+                            <button class="portal-filter-tab${c.key === catFilter ? ' portal-filter-active' : ''}"
+                                onclick="PortalApp._filterProjectFiles('${c.key}', null)">
+                                <i data-lucide="${c.icon}" style="width:14px;height:14px"></i>
+                                ${this.escHtml(c.label)}
+                            </button>
+                        `).join('')}
+                    </div>
+                    <div class="portal-filter-tabs portal-filter-tabs--secondary">
+                        ${approvalFilters.map(a => `
+                            <button class="portal-filter-tab portal-filter-tab--sm${a.key === appFilter ? ' portal-filter-active' : ''}"
+                                onclick="PortalApp._filterProjectFiles(null, '${a.key}')">
+                                ${this.escHtml(a.label)}
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+
+                ${filteredFiles.length > 0 ? `
+                    <div class="portal-file-grid">
+                        ${filteredFiles.map((f, idx) => this._renderFileCard(f, idx)).join('')}
+                    </div>
+                ` : `
+                    <div class="portal-empty-state">
+                        <div class="portal-empty-icon"><i data-lucide="file-x"></i></div>
+                        <h3>لا توجد ملفات</h3>
+                        <p>${catFilter !== 'all' || appFilter !== 'all' ? 'لا توجد ملفات تطابق الفلتر. جرّب تصفية مختلفة' : 'لم يتم رفع أي ملفات بعد لهذا المشروع'}</p>
+                    </div>
+                `}
             </div>
         `;
         if (typeof lucide !== 'undefined') lucide.createIcons();
     },
 
-    // ============ File Preview (stub) ============
-    async renderFilePreview(fileId) {
-        const main = document.getElementById('portalMain');
-        main.innerHTML = '<div class="portal-loading"><div class="portal-spinner"></div></div>';
-        this.currentFile = fileId;
-        main.innerHTML = `
-            <div class="portal-stub-screen">
-                <button class="portal-back-btn" onclick="history.back()">
-                    <i data-lucide="arrow-right"></i> رجوع
-                </button>
-                <div class="portal-empty-state">
-                    <div class="portal-empty-icon"><i data-lucide="file"></i></div>
-                    <h3>معاينة الملف</h3>
-                    <p>هذه الشاشة قيد التطوير — سيتم إضافتها في المرحلة القادمة</p>
+    _renderFileCard(f, idx) {
+        const mimeIcon = this.getFileIcon(f.mime_type);
+        const approvalBadge = this._approvalBadgeHtml(f.approval_status);
+
+        return `
+            <div class="portal-file-card" style="animation-delay:${idx * 0.04}s"
+                onclick="PortalApp.showScreen('file_preview', {fileId: '${this.escAttr(f.id)}'})">
+                <div class="portal-file-card-icon">
+                    ${this._getFileThumbnail(f)}
+                </div>
+                <div class="portal-file-card-info">
+                    <div class="portal-file-card-name">${this.escHtml(f.file_name)}</div>
+                    <div class="portal-file-card-meta">
+                        <span>${this.formatSize(f.file_size)}</span>
+                        <span>·</span>
+                        <span>v${f.version || 1}</span>
+                        <span>·</span>
+                        <span>${this.timeAgo(f.created_at)}</span>
+                    </div>
+                </div>
+                <div class="portal-file-card-status">
+                    ${approvalBadge}
                 </div>
             </div>
         `;
-        if (typeof lucide !== 'undefined') lucide.createIcons();
+    },
+
+    _getFileThumbnail(f) {
+        const mime = f.mime_type || '';
+        if (mime.startsWith('image/') && f.file_path) {
+            const config = window.PORTAL_CONFIG || {};
+            const url = (config.supabaseUrl || '') + '/storage/v1/object/public/' + (config.bucket || '') + '/' + f.file_path;
+            return `<img src="${this.escAttr(url)}" alt="" class="portal-file-thumb" loading="lazy">`;
+        }
+        return this.getFileIcon(mime);
+    },
+
+    _approvalBadgeHtml(status) {
+        if (!status) return '';
+        const map = {
+            'pending': { label: 'بانتظار', icon: 'clock', cls: 'pending' },
+            'approved': { label: 'مُوافق', icon: 'check-circle', cls: 'approved' },
+            'revision_requested': { label: 'تعديل', icon: 'edit-3', cls: 'revision' }
+        };
+        const s = map[status];
+        if (!s) return '';
+        return `<span class="portal-approval-badge portal-approval-badge--${s.cls}">
+            <i data-lucide="${s.icon}" style="width:12px;height:12px"></i>
+            ${s.label}
+        </span>`;
+    },
+
+    _filterProjectFiles(category, approval) {
+        if (category !== null) this._currentFileCategory = category;
+        if (approval !== null) this._currentApprovalFilter = approval;
+        if (this._projectData) {
+            this._renderProjectDetailView(this._projectData);
+        }
+    },
+
+    // ============ File Preview ============
+    _filePreviewSkeleton() {
+        return `
+            <div class="portal-file-preview">
+                <div class="portal-skeleton" style="height:18px;width:100px;margin-bottom:20px"></div>
+                <div class="portal-preview-container portal-skeleton-card">
+                    <div class="portal-skeleton" style="height:400px;width:100%;border-radius:12px"></div>
+                </div>
+                <div class="portal-preview-info portal-skeleton-card" style="margin-top:20px">
+                    <div class="portal-skeleton" style="height:24px;width:200px;margin-bottom:10px"></div>
+                    <div class="portal-skeleton" style="height:14px;width:150px;margin-bottom:16px"></div>
+                    <div class="portal-skeleton" style="height:44px;width:100%;border-radius:10px"></div>
+                </div>
+            </div>
+        `;
+    },
+
+    async renderFilePreview(fileId) {
+        const main = document.getElementById('portalMain');
+        main.innerHTML = this._filePreviewSkeleton();
+        this.currentFile = fileId;
+
+        try {
+            const res = await this.apiFetch(`?action=client_file_preview&file_id=${encodeURIComponent(fileId)}`);
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+
+            const f = data.file;
+            const mime = f.mime_type || '';
+            const approval = f.approval;
+            const canApprove = f.needs_approval && (window.PORTAL_CONFIG?.client?.role === 'primary');
+
+            // Back button — go to project detail if we know the project
+            const backAction = f.project
+                ? `PortalApp.showScreen('project_detail', {projectId: '${this.escAttr(f.project.id)}'})`
+                : `history.back()`;
+            const backLabel = f.project ? `رجوع لـ ${this.escHtml(f.project.name)}` : 'رجوع';
+
+            // Build preview HTML based on MIME type
+            const previewHtml = this._buildPreviewMedia(f, mime);
+
+            // Build approval section
+            const approvalHtml = canApprove ? this._buildApprovalSection(f, approval) : this._buildApprovalReadonly(approval);
+
+            main.innerHTML = `
+                <div class="portal-file-preview">
+                    <button class="portal-back-btn" onclick="${backAction}">
+                        <i data-lucide="arrow-right"></i> ${backLabel}
+                    </button>
+
+                    <div class="portal-preview-container">
+                        ${previewHtml}
+                    </div>
+
+                    <div class="portal-preview-info-panel">
+                        <div class="portal-preview-header">
+                            <div class="portal-preview-file-icon">
+                                ${this.getFileIcon(mime)}
+                            </div>
+                            <div class="portal-preview-file-details">
+                                <h2>${this.escHtml(f.file_name)}</h2>
+                                <div class="portal-preview-meta">
+                                    <span>${this.formatSize(f.file_size)}</span>
+                                    <span>·</span>
+                                    <span>${this.escHtml(f.category || 'general')}</span>
+                                    <span>·</span>
+                                    <span>الإصدار ${f.version || 1}</span>
+                                    <span>·</span>
+                                    <span>${this.timeAgo(f.created_at)}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="portal-preview-actions">
+                            <a href="index.php?action=client_download&file_id=${this.escAttr(f.id)}"
+                                class="portal-btn portal-btn--primary" target="_blank">
+                                <i data-lucide="download" style="width:16px;height:16px"></i>
+                                تحميل الملف
+                            </a>
+                            ${f.public_url ? `
+                                <button class="portal-btn portal-btn--ghost" onclick="PortalApp._copyLink('${this.escAttr(f.public_url)}')">
+                                    <i data-lucide="link" style="width:16px;height:16px"></i>
+                                    نسخ الرابط
+                                </button>
+                            ` : ''}
+                        </div>
+
+                        ${approvalHtml}
+
+                        ${f.project ? `
+                            <div class="portal-preview-project-link">
+                                <span class="portal-meta-item"><i data-lucide="folder-open" style="width:14px;height:14px"></i> ${this.escHtml(f.project.name)}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        } catch (err) {
+            main.innerHTML = `
+                <div class="portal-error-state">
+                    <button class="portal-back-btn" onclick="history.back()">
+                        <i data-lucide="arrow-right"></i> رجوع
+                    </button>
+                    <div class="portal-error-icon"><i data-lucide="alert-triangle"></i></div>
+                    <h3>خطأ في تحميل الملف</h3>
+                    <p>${this.escHtml(err.message)}</p>
+                    <button class="portal-btn-retry" onclick="PortalApp.renderFilePreview('${this.escAttr(fileId)}')">
+                        <i data-lucide="refresh-cw"></i> إعادة المحاولة
+                    </button>
+                </div>
+            `;
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+    },
+
+    _buildPreviewMedia(f, mime) {
+        const url = f.public_url || '';
+        if (!url) {
+            return `<div class="portal-preview-placeholder"><i data-lucide="file-question" style="width:64px;height:64px"></i><p>المعاينة غير متاحة</p></div>`;
+        }
+
+        if (mime.startsWith('image/')) {
+            return `<img src="${this.escAttr(url)}" alt="${this.escAttr(f.file_name)}" class="portal-preview-image" loading="lazy">`;
+        }
+        if (mime.startsWith('video/')) {
+            return `<video controls preload="metadata" class="portal-preview-video"><source src="${this.escAttr(url)}" type="${this.escAttr(mime)}">المتصفح لا يدعم تشغيل الفيديو</video>`;
+        }
+        if (mime.startsWith('audio/')) {
+            return `
+                <div class="portal-preview-audio-wrap">
+                    <div class="portal-preview-audio-icon"><i data-lucide="music" style="width:64px;height:64px"></i></div>
+                    <audio controls preload="metadata" class="portal-preview-audio"><source src="${this.escAttr(url)}" type="${this.escAttr(mime)}"></audio>
+                </div>
+            `;
+        }
+        if (mime.includes('pdf')) {
+            return `<iframe src="${this.escAttr(url)}" class="portal-preview-pdf" title="${this.escAttr(f.file_name)}"></iframe>`;
+        }
+
+        // Generic file — show icon + info
+        return `
+            <div class="portal-preview-placeholder">
+                ${this.getFileIcon(mime)}
+                <p>${this.escHtml(f.file_name)}</p>
+                <span>${this.formatSize(f.file_size)}</span>
+            </div>
+        `;
+    },
+
+    // ============ Approval Section ============
+    _buildApprovalSection(f, approval) {
+        if (!approval) {
+            // No approval record yet, but file needs approval
+            return this._buildApprovalPending(f.id, null);
+        }
+
+        switch (approval.status) {
+            case 'pending':
+                return this._buildApprovalPending(f.id, approval);
+            case 'approved':
+                return this._buildApprovalApproved(approval);
+            case 'revision_requested':
+                return this._buildApprovalRevision(f.id, approval);
+            default:
+                return '';
+        }
+    },
+
+    _buildApprovalPending(fileId, approval) {
+        return `
+            <div class="portal-approval-section portal-approval-section--pending" id="approvalSection">
+                <div class="portal-approval-header">
+                    <i data-lucide="clock" style="width:20px;height:20px;color:var(--portal-warning)"></i>
+                    <span>هذا الملف بانتظار موافقتك</span>
+                </div>
+                <div class="portal-approval-actions" id="approvalActions">
+                    <button class="portal-btn portal-btn--success" onclick="PortalApp.approveFile('${this.escAttr(fileId)}')">
+                        <i data-lucide="check" style="width:16px;height:16px"></i>
+                        موافقة
+                    </button>
+                    <button class="portal-btn portal-btn--danger-outline" onclick="PortalApp.showRevisionForm('${this.escAttr(fileId)}')">
+                        <i data-lucide="edit-3" style="width:16px;height:16px"></i>
+                        طلب تعديل
+                    </button>
+                </div>
+                <div class="portal-revision-form" id="revisionForm" style="display:none">
+                    <textarea class="portal-textarea" id="revisionComment" placeholder="وصف التعديلات المطلوبة... (10 حروف على الأقل)" rows="3"></textarea>
+                    <div class="portal-revision-form-actions">
+                        <button class="portal-btn portal-btn--danger" id="revisionSubmitBtn" onclick="PortalApp.requestRevision('${this.escAttr(fileId)}')">
+                            <i data-lucide="send" style="width:14px;height:14px"></i>
+                            إرسال طلب التعديل
+                        </button>
+                        <button class="portal-btn portal-btn--ghost" onclick="PortalApp.hideRevisionForm()">إلغاء</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    _buildApprovalApproved(approval) {
+        return `
+            <div class="portal-approval-section portal-approval-section--approved">
+                <div class="portal-approval-header">
+                    <i data-lucide="check-circle" style="width:20px;height:20px;color:var(--portal-success)"></i>
+                    <span>تمت الموافقة</span>
+                    ${approval.updated_at ? `<time>${this.timeAgo(approval.updated_at)}</time>` : ''}
+                </div>
+            </div>
+        `;
+    },
+
+    _buildApprovalRevision(fileId, approval) {
+        return `
+            <div class="portal-approval-section portal-approval-section--revision">
+                <div class="portal-approval-header">
+                    <i data-lucide="edit-3" style="width:20px;height:20px;color:var(--portal-danger)"></i>
+                    <span>طُلب تعديل</span>
+                    ${approval.updated_at ? `<time>${this.timeAgo(approval.updated_at)}</time>` : ''}
+                </div>
+                ${approval.comment ? `
+                    <div class="portal-approval-comment">
+                        <p>"${this.escHtml(approval.comment)}"</p>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    },
+
+    _buildApprovalReadonly(approval) {
+        if (!approval) return '';
+        switch (approval.status) {
+            case 'approved':
+                return this._buildApprovalApproved(approval);
+            case 'revision_requested':
+                return this._buildApprovalRevision(null, approval);
+            case 'pending':
+                return `
+                    <div class="portal-approval-section portal-approval-section--pending">
+                        <div class="portal-approval-header">
+                            <i data-lucide="clock" style="width:20px;height:20px;color:var(--portal-warning)"></i>
+                            <span>بانتظار الموافقة</span>
+                        </div>
+                    </div>
+                `;
+            default:
+                return '';
+        }
+    },
+
+    // ============ Approval Actions ============
+    showRevisionForm(fileId) {
+        const form = document.getElementById('revisionForm');
+        const actions = document.getElementById('approvalActions');
+        if (form) form.style.display = 'block';
+        if (actions) actions.style.display = 'none';
+        const textarea = document.getElementById('revisionComment');
+        if (textarea) textarea.focus();
+    },
+
+    hideRevisionForm() {
+        const form = document.getElementById('revisionForm');
+        const actions = document.getElementById('approvalActions');
+        if (form) form.style.display = 'none';
+        if (actions) actions.style.display = 'flex';
+    },
+
+    async approveFile(fileId) {
+        const section = document.getElementById('approvalSection');
+        try {
+            const res = await this.apiFetch('?action=client_approve_file', {
+                method: 'POST',
+                body: { file_id: fileId }
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                this.toast('تمت الموافقة بنجاح ✅', 'success');
+                // Replace approval section with approved state
+                if (section) {
+                    section.outerHTML = this._buildApprovalApproved({ status: 'approved', updated_at: new Date().toISOString() });
+                    if (typeof lucide !== 'undefined') lucide.createIcons();
+                }
+            } else {
+                this.toast(data.error || 'حدث خطأ', 'error');
+            }
+        } catch (err) {
+            this.toast('خطأ في الاتصال بالخادم', 'error');
+        }
+    },
+
+    async requestRevision(fileId) {
+        const comment = (document.getElementById('revisionComment')?.value || '').trim();
+        if (comment.length < 10) {
+            this.toast('التعليق يجب أن يكون 10 حروف على الأقل', 'error');
+            return;
+        }
+
+        const btn = document.getElementById('revisionSubmitBtn');
+        if (btn) { btn.disabled = true; btn.classList.add('portal-btn-loading'); }
+
+        try {
+            const res = await this.apiFetch('?action=client_request_revision', {
+                method: 'POST',
+                body: { file_id: fileId, comment }
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                this.toast('تم إرسال طلب التعديل ✏️', 'success');
+                const section = document.getElementById('approvalSection');
+                if (section) {
+                    section.outerHTML = this._buildApprovalRevision(fileId, {
+                        status: 'revision_requested',
+                        comment,
+                        updated_at: new Date().toISOString()
+                    });
+                    if (typeof lucide !== 'undefined') lucide.createIcons();
+                }
+            } else {
+                this.toast(data.error || 'حدث خطأ', 'error');
+                if (btn) { btn.disabled = false; btn.classList.remove('portal-btn-loading'); }
+            }
+        } catch (err) {
+            this.toast('خطأ في الاتصال بالخادم', 'error');
+            if (btn) { btn.disabled = false; btn.classList.remove('portal-btn-loading'); }
+        }
+    },
+
+    _copyLink(url) {
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(url).then(() => {
+                this.toast('تم نسخ الرابط 📋', 'success');
+            }).catch(() => {
+                this.toast('لم يتم نسخ الرابط', 'error');
+            });
+        } else {
+            // Fallback
+            const inp = document.createElement('input');
+            inp.value = url;
+            document.body.appendChild(inp);
+            inp.select();
+            document.execCommand('copy');
+            inp.remove();
+            this.toast('تم نسخ الرابط 📋', 'success');
+        }
     },
 
     // ============ Notifications (stub) ============
